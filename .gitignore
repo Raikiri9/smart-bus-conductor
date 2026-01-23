@@ -1,0 +1,40 @@
+# Frontend
+SmartBusApp/node_modules/
+SmartBusApp/.expo/
+SmartBusApp/.expo-shared/
+SmartBusApp/dist/
+SmartBusApp/npm-debug.*
+SmartBusApp/*.jks
+SmartBusApp/*.p8
+SmartBusApp/*.p12
+SmartBusApp/*.key
+SmartBusApp/*.mobileprovision
+SmartBusApp/*.orig.*
+SmartBusApp/web-build/
+SmartBusApp/.env
+SmartBusApp/.env.local
+
+# Backend
+backend/venv/
+backend/env/
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/db.sqlite3
+backend/.env
+backend/.env.local
+backend/media/
+backend/staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+.DS_Store
+Thumbs.db
