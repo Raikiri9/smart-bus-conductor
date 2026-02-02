@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useEffect, useState, useCallback } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { getPassengerCount, resetPassengerCount } from "../../utils/passengerCounter";
+import OfflineIndicator from "../../components/OfflineIndicator";
 
 
 export default function HomeScreen() {
@@ -24,11 +25,6 @@ export default function HomeScreen() {
     }, [loadPassengers])
   );
 
-  const handleResetCount = async () => {
-    await resetPassengerCount();
-    loadPassengers();
-  };
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -36,6 +32,9 @@ export default function HomeScreen() {
         <Text style={styles.headerTitle}>Smart Bus Conductor</Text>
       </View>
       <Text style={styles.subtitle}>Digital Ticketing & Passenger Management System</Text>
+
+      {/* Offline Indicator */}
+      <OfflineIndicator />
 
       {/* Seat Availability Card */}
       <View style={styles.availabilityCard}>

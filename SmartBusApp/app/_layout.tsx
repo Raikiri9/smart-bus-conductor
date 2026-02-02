@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text } from 'react-native'; // Replaced SafeAreaView with View
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
@@ -8,6 +8,8 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { PassengerProvider } from '../utils/PassengerContext';
 import { TripProvider } from '../utils/TripContext';
+import { ConnectivityProvider } from '../utils/ConnectivityManager';
+import { initializeDatabase } from '../utils/offlineDatabase';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -15,6 +17,13 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  // Initialize offline database on app start
+  useEffect(() => {
+    initializeDatabase().catch(error => {
+      console.error('Failed to initialize offline database:', error);
+    });
+  }, []);
 
   // Runtime presence checks for imports to identify any undefined elements
   // eslint-disable-next-line no-console
@@ -47,14 +56,16 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <PassengerProvider>
-        <TripProvider>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </Stack>
-        </TripProvider>
-      </PassengerProvider>
+      <ConnectivityProvider>
+        <PassengerProvider>
+          <TripProvider>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
+          </TripProvider>
+        </PassengerProvider>
+      </ConnectivityProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
   );

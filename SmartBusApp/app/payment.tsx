@@ -1,18 +1,65 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useTrip } from '../utils/TripContext';
-import { useState } from 'react';
+import { queuePayment } from '../utils/offlineDatabase';
+import { useConnectivity } from '../utils/ConnectivityManager';
+import { useState, useEffect } from 'react';
+
+const API_BASE_URL = 'http://10.130.5.46:8000';
+
+// Simple UUID generator
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+// Helper component for test data items
+function TestDataItem({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
+  return (
+    <TouchableOpacity style={styles.testDataItem} onPress={onCopy}>
+      <View style={styles.testDataItemContent}>
+        <Text style={styles.testDataItemLabel}>{label}:</Text>
+        <Text style={styles.testDataItemValue}>{value}</Text>
+      </View>
+      <Text style={styles.testDataItemCopy}>Tap to Copy</Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function PaymentScreen() {
   const { trip } = useTrip();
+  const { isOnline } = useConnectivity();
   const [selectedPayment, setSelectedPayment] = useState<'ecocash' | 'card' | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('+263 77 123 4567');
   const [payerPhoneNumber, setPayerPhoneNumber] = useState('+263 77 987 6543');
   const [cardNumber, setCardNumber] = useState('1234 5678 9012 3456');
   const [expiryDate, setExpiryDate] = useState('MM/YY');
   const [cvv, setCvv] = useState('123');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [testData, setTestData] = useState<any>(null);
+  const [showTestPanel, setShowTestPanel] = useState(false);
 
-  const handlePayment = () => {
+  // Fetch test data on component mount
+  useEffect(() => {
+    fetchTestData();
+  }, []);
+
+  const fetchTestData = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/trips/payment/test-data/`);
+      if (response.ok) {
+        const data = await response.json();
+        setTestData(data);
+      }
+    } catch (error) {
+      console.log('Test data not available (production mode)');
+    }
+  };
+
+  const initiatePayment = async () => {
     if (!selectedPayment) {
       Alert.alert('Payment Method Required', 'Please select a payment method');
       return;
@@ -43,20 +90,99 @@ export default function PaymentScreen() {
       }
     }
 
-    // Simulate payment processing
-    Alert.alert(
-      'Processing Payment',
-      `Processing ${selectedPayment === 'ecocash' ? 'EcoCash' : 'Card'} payment of $${trip?.fare}...`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            // Proceed to confirmation after payment simulation
-            router.push('/confirmation');
+    setIsProcessing(true);
+
+    const reference = `BUS-${Date.now()}-${generateUUID().substring(0, 8)}`;
+    const paymentData: any = {
+      payment_method: selectedPayment,
+      phone_number: phoneNumber,
+      amount: trip?.fare,
+      destination: trip?.destination,
+      reference,
+    };
+
+    if (selectedPayment === 'ecocash') {
+      paymentData.payer_phone = payerPhoneNumber;
+    } else if (selectedPayment === 'card') {
+      paymentData.card_token = cardNumber.replace(/\s/g, '');
+    }
+
+    try {
+      if (isOnline) {
+        // Send to backend
+        const response = await fetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        },
-      ]
-    );
+          body: JSON.stringify(paymentData),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          Alert.alert(
+            'Payment Processing',
+            `${selectedPayment === 'ecocash' ? 'EcoCash' : 'Card'} payment initiated.\nReference: ${result.reference}\n\nProceeding to confirmation...`,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  router.push('/confirmation');
+                },
+              },
+            ]
+          );
+        } else {
+          Alert.alert(
+            'Payment Failed',
+            result.error || 'Payment could not be processed. Please try again.'
+          );
+        }
+      } else {
+        // Queue payment for later
+        await queuePayment({
+          trip_id: 'unknown',
+          ...paymentData,
+        });
+
+        Alert.alert(
+          'Offline Mode',
+          `Payment queued successfully.\nReference: ${reference}\n\nYour payment will be processed when online.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.push('/confirmation');
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+
+      if (!isOnline) {
+        // Try to queue even if online request failed
+        try {
+          await queuePayment({
+            trip_id: 'unknown',
+            ...paymentData,
+          });
+          Alert.alert(
+            'Offline Queued',
+            'Payment saved locally and will sync when online.'
+          );
+          router.push('/confirmation');
+        } catch (queueError) {
+          Alert.alert('Error', 'Failed to process or queue payment.');
+        }
+      } else {
+        Alert.alert('Error', 'Failed to process payment. Please try again.');
+      }
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (!trip) {
@@ -283,11 +409,101 @@ export default function PaymentScreen() {
             styles.payButton,
             !selectedPayment && styles.payButtonDisabled,
           ]}
-          onPress={handlePayment}
-          disabled={!selectedPayment}
+          onPress={initiatePayment}
+          disabled={!selectedPayment || isProcessing}
         >
-          <Text style={styles.payButtonText}>Pay ${trip.fare}</Text>
+          {isProcessing ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.payButtonText}>Pay ${trip.fare}</Text>
+          )}
         </TouchableOpacity>
+
+        {/* Test Mode Panel */}
+        {testData && (
+          <>
+            <TouchableOpacity
+              style={styles.testToggleButton}
+              onPress={() => setShowTestPanel(!showTestPanel)}
+            >
+              <Text style={styles.testToggleText}>
+                {showTestPanel ? '▼' : '▶'} Test Mode Available - Tap to View Test Data
+              </Text>
+            </TouchableOpacity>
+
+            {showTestPanel && (
+              <View style={styles.testPanel}>
+                <Text style={styles.testPanelTitle}>🧪 Test Mode - EcoCash Numbers</Text>
+                <TestDataItem
+                  label="Success (5s)"
+                  value={testData.ecocash_test_numbers.success_5s}
+                  onCopy={() => {
+                    setPayerPhoneNumber(testData.ecocash_test_numbers.success_5s);
+                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.success_5s);
+                  }}
+                />
+                <TestDataItem
+                  label="Success Delayed (30s)"
+                  value={testData.ecocash_test_numbers.success_30s}
+                  onCopy={() => {
+                    setPayerPhoneNumber(testData.ecocash_test_numbers.success_30s);
+                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.success_30s);
+                  }}
+                />
+                <TestDataItem
+                  label="Failed - User Cancelled"
+                  value={testData.ecocash_test_numbers.failed_user_cancelled}
+                  onCopy={() => {
+                    setPayerPhoneNumber(testData.ecocash_test_numbers.failed_user_cancelled);
+                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.failed_user_cancelled);
+                  }}
+                />
+                <TestDataItem
+                  label="Failed - Insufficient Balance"
+                  value={testData.ecocash_test_numbers.failed_insufficient_balance}
+                  onCopy={() => {
+                    setPayerPhoneNumber(testData.ecocash_test_numbers.failed_insufficient_balance);
+                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.failed_insufficient_balance);
+                  }}
+                />
+
+                <Text style={[styles.testPanelTitle, { marginTop: 16 }]}>💳 Test Mode - Card Tokens</Text>
+                <TestDataItem
+                  label="Success (5s)"
+                  value={testData.card_test_tokens.success_5s}
+                  onCopy={() => {
+                    setCardNumber(testData.card_test_tokens.success_5s);
+                    Alert.alert('Copied', 'Card token set');
+                  }}
+                />
+                <TestDataItem
+                  label="Success Delayed (30s)"
+                  value={testData.card_test_tokens.success_30s}
+                  onCopy={() => {
+                    setCardNumber(testData.card_test_tokens.success_30s);
+                    Alert.alert('Copied', 'Card token set');
+                  }}
+                />
+                <TestDataItem
+                  label="Failed - User Cancelled"
+                  value={testData.card_test_tokens.failed_user_cancelled}
+                  onCopy={() => {
+                    setCardNumber(testData.card_test_tokens.failed_user_cancelled);
+                    Alert.alert('Copied', 'Card token set');
+                  }}
+                />
+                <TestDataItem
+                  label="Failed - Insufficient Balance"
+                  value={testData.card_test_tokens.failed_insufficient_balance}
+                  onCopy={() => {
+                    setCardNumber(testData.card_test_tokens.failed_insufficient_balance);
+                    Alert.alert('Copied', 'Card token set');
+                  }}
+                />
+              </View>
+            )}
+          </>
+        )}
 
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -560,6 +776,63 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Test Mode Panel
+  testToggleButton: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+    padding: 16,
+    marginBottom: 12,
+  },
+  testToggleText: {
+    color: '#8B5CF6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  testPanel: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+    padding: 16,
+    marginBottom: 20,
+  },
+  testPanelTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#8B5CF6',
+    marginBottom: 12,
+  },
+  testDataItem: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  testDataItemContent: {
+    flex: 1,
+  },
+  testDataItemLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 4,
+  },
+  testDataItemValue: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '600',
+    fontFamily: 'monospace',
+  },
+  testDataItemCopy: {
+    fontSize: 11,
+    color: '#8B5CF6',
+    fontWeight: '600',
   },
 
   bottomPadding: {

@@ -35,6 +35,19 @@ class PassengerTrip(models.Model):
 
 
 class Trip(models.Model):
+	PAYMENT_STATUS_CHOICES = [
+		('pending', 'Pending'),
+		('processing', 'Processing'),
+		('success', 'Success'),
+		('failed', 'Failed'),
+	]
+
+	PAYMENT_METHOD_CHOICES = [
+		('ecocash', 'EcoCash'),
+		('card', 'Card'),
+		('test', 'Test Mode'),
+	]
+
 	phone_number = models.CharField(max_length=15)
 	origin_lat = models.FloatField()
 	origin_lng = models.FloatField()
@@ -47,6 +60,13 @@ class Trip(models.Model):
 	boarded = models.BooleanField(default=True)
 	completed = models.BooleanField(default=False)
 	created_at = models.DateTimeField(auto_now_add=True)
+
+	# Payment fields
+	payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='ecocash', null=True, blank=True)
+	payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending', null=True, blank=True)
+	payer_phone = models.CharField(max_length=15, null=True, blank=True)  # For EcoCash
+	paynow_reference = models.CharField(max_length=100, null=True, blank=True, unique=True)  # Paynow transaction reference
+	payment_timestamp = models.DateTimeField(null=True, blank=True)
 
 	def __str__(self):
 		return f"{self.phone_number} → {self.destination_name}"

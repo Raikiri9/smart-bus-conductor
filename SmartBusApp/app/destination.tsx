@@ -1,8 +1,10 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, Alert } from "react-native";
 import * as Location from "expo-location";
 import { useEffect, useState, useRef } from "react";
 import { router } from "expo-router";
 import { useTrip } from '../utils/TripContext';
+import { useConnectivity } from '../utils/ConnectivityManager';
+import { saveDestination, getDestinations } from '../utils/offlineDatabase';
 
 // Conditionally load MapView and Marker only on native platforms
 const getNativeMapComponents = () => {
@@ -25,6 +27,7 @@ const { MapView, Marker } = getNativeMapComponents();
 
 export default function DestinationScreen() {
   const { startTrip } = useTrip();
+  const { isOnline } = useConnectivity();
   const mapRef = useRef<any>(null);
   
   const [currentLocation, setCurrentLocation] = useState<any>(null);
@@ -34,6 +37,7 @@ export default function DestinationScreen() {
   const [results, setResults] = useState<any[]>([]);
   const [distance, setDistance] = useState(0);
   const [fare, setFare] = useState(0);
+  const [cachedDestinations, setCachedDestinations] = useState<any[]>([]);
 
   // Get bus GPS location
   useEffect(() => {
@@ -77,10 +81,50 @@ export default function DestinationScreen() {
     })();
   }, []);
 
-  // Search destination using OpenStreetMap (Nominatim)
+  // Load cached destinations on mount
+  useEffect(() => {
+    const loadCachedDestinations = async () => {
+      try {
+        const cached = await getDestinations();
+        setCachedDestinations(cached);
+      } catch (error) {
+        console.log('Error loading cached destinations:', error);
+      }
+    };
+    loadCachedDestinations();
+  }, []);
+
+  // Search destination using OpenStreetMap (Nominatim) or cached destinations
   const searchDestination = async () => {
     if (!query) return;
 
+    // If offline, search from cached destinations
+    if (!isOnline) {
+      const filtered = cachedDestinations.filter(dest => 
+        dest.name.toLowerCase().includes(query.toLowerCase())
+      );
+      
+      if (filtered.length === 0) {
+        Alert.alert(
+          'Offline Mode',
+          'No cached destinations match your search. Previously visited destinations are available offline.',
+          [{ text: 'OK' }]
+        );
+      }
+      
+      // Convert cached format to search result format
+      const formattedResults = filtered.map(dest => ({
+        lat: dest.latitude.toString(),
+        lon: dest.longitude.toString(),
+        display_name: dest.name,
+        cached: true
+      }));
+      
+      setResults(formattedResults);
+      return;
+    }
+
+    // Online search using OpenStreetMap
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=zw`,
@@ -101,11 +145,29 @@ export default function DestinationScreen() {
       setResults(data || []);
     } catch (error) {
       console.log('Search error:', error);
-      setResults([]);
+      // Fallback to cached destinations on network error
+      const filtered = cachedDestinations.filter(dest => 
+        dest.name.toLowerCase().includes(query.toLowerCase())
+      );
+      const formattedResults = filtered.map(dest => ({
+        lat: dest.latitude.toString(),
+        lon: dest.longitude.toString(),
+        display_name: dest.name,
+        cached: true
+      }));
+      setResults(formattedResults);
+      
+      if (formattedResults.length > 0) {
+        Alert.alert(
+          'Connection Issue',
+          'Showing cached destinations due to network error.',
+          [{ text: 'OK' }]
+        );
+      }
     }
   };
 
-  // Distance calculation (Haversine)
+  // Distance calculation (Haversine fallback)
   const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -118,6 +180,31 @@ export default function DestinationScreen() {
         Math.sin(dLon / 2) ** 2;
 
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Road distance using OSRM (online)
+  const getRoadDistanceKm = async (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    if (!isOnline) return null;
+
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const meters = data?.routes?.[0]?.distance;
+      if (typeof meters !== 'number') return null;
+
+      return meters / 1000;
+    } catch (error) {
+      console.log('Road distance error:', error);
+      return null;
+    }
+  };
+
+  const getDistanceKm = async (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const roadKm = await getRoadDistanceKm(lat1, lon1, lat2, lon2);
+    return roadKm ?? calculateDistanceKm(lat1, lon1, lat2, lon2);
   };
 
   // Fare logic: $1 per 30km (margin >= 0.5 rounds up to next dollar)
@@ -133,7 +220,7 @@ export default function DestinationScreen() {
 
     setDestination(dest);
 
-    const dist = calculateDistanceKm(
+    const dist = await getDistanceKm(
       currentLocation.latitude,
       currentLocation.longitude,
       dest.latitude,
@@ -145,6 +232,18 @@ export default function DestinationScreen() {
     setFare(calculatedFare);
     setResults([]);
     setQuery('');
+
+    // Cache destination for offline use (only if not already cached)
+    if (!place.cached) {
+      try {
+        await saveDestination(dest.name, dest.latitude, dest.longitude);
+        // Refresh cached destinations list
+        const cached = await getDestinations();
+        setCachedDestinations(cached);
+      } catch (error) {
+        console.log('Failed to cache destination:', error);
+      }
+    }
 
     // Animate map to show both markers
     if (Platform.OS !== 'web' && mapRef.current) {
@@ -208,7 +307,7 @@ export default function DestinationScreen() {
 
         setDestination(dest);
 
-        const dist = calculateDistanceKm(
+        const dist = await getDistanceKm(
           currentLocation.latitude,
           currentLocation.longitude,
           dest.latitude,
@@ -282,7 +381,12 @@ export default function DestinationScreen() {
             <Text style={styles.titleIcon}>📍</Text>
             <View style={styles.titleTextContainer}>
               <Text style={styles.title}>Select Your Destination</Text>
-              <Text style={styles.subtitle}>Choose from available destinations in Zimbabwe</Text>
+              <Text style={styles.subtitle}>
+                {isOnline 
+                  ? 'Choose from available destinations in Zimbabwe'
+                  : '🔴 Offline Mode - Showing cached destinations only'
+                }
+              </Text>
             </View>
           </View>
         </View>
@@ -327,7 +431,37 @@ export default function DestinationScreen() {
                 style={styles.resultItem}
                 onPress={() => selectDestination(item)}
               >
-                <Text style={styles.resultText}>{item.display_name}</Text>
+                <View style={styles.resultContent}>
+                  <Text style={styles.resultText}>{item.display_name}</Text>
+                  {item.cached && (
+                    <View style={styles.cachedBadge}>
+                      <Text style={styles.cachedBadgeText}>💾 Cached</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* Popular Cached Destinations - Show when not searching and offline */}
+        {!isOnline && query.length === 0 && results.length === 0 && cachedDestinations.length > 0 && (
+          <View style={styles.cachedDestinationsContainer}>
+            <Text style={styles.cachedDestinationsTitle}>💾 Recently Visited Destinations</Text>
+            <Text style={styles.cachedDestinationsSubtitle}>Tap to select from your history</Text>
+            {cachedDestinations.slice(0, 5).map((dest, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.cachedDestinationItem}
+                onPress={() => selectDestination({
+                  lat: dest.latitude.toString(),
+                  lon: dest.longitude.toString(),
+                  display_name: dest.name,
+                  cached: true
+                })}
+              >
+                <Text style={styles.cachedDestinationIcon}>📍</Text>
+                <Text style={styles.cachedDestinationText}>{dest.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -682,5 +816,62 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  resultContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+  },
+  cachedBadge: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  cachedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  cachedDestinationsContainer: {
+    backgroundColor: '#1E293B',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cachedDestinationsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  cachedDestinationsSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 12,
+  },
+  cachedDestinationItem: {
+    backgroundColor: '#0F172A',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cachedDestinationIcon: {
+    fontSize: 18,
+    marginRight: 12,
+  },
+  cachedDestinationText: {
+    fontSize: 14,
+    color: '#E2E8F0',
+    flex: 1,
   },
 });

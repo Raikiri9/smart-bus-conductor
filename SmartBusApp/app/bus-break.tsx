@@ -142,7 +142,7 @@ export default function BusBreakScreen() {
 
 	const validateOnServer = async (qr: string) => {
 		try {
-			const res = await fetch('http://10.130.1.95:8000/api/trips/validate/', {
+			const res = await fetch('http://10.130.5.46:8000/api/trips/validate/', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ qr_code: qr }),
@@ -213,6 +213,7 @@ export default function BusBreakScreen() {
 						<CameraView
 							ref={cameraRef}
 							style={styles.barcode}
+							facing="front"
 							onBarcodeScanned={scanningEnabled ? handleScan : undefined}
 						/>
 					)}

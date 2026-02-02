@@ -1,8 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useTrip } from '../utils/TripContext';
 import { useEffect, useState } from 'react';
 import { incrementPassengerCount } from '../utils/passengerCounter';
+import { queueTrip } from '../utils/offlineDatabase';
+import { useConnectivity } from '../utils/ConnectivityManager';
 import * as Speech from 'expo-speech';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -16,12 +18,14 @@ const generateTicketId = () => {
 
 export default function ConfirmationScreen() {
   const { trip } = useTrip();
+  const { isOnline } = useConnectivity();
   const [ticketId] = useState(generateTicketId());
   const [timeLeft, setTimeLeft] = useState(5);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const [totalSeats] = useState(60);
   const [passengerAdded, setPassengerAdded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'synced'>('idle');
 
   const qrPayload = {
     ticketId,
@@ -77,37 +81,69 @@ export default function ConfirmationScreen() {
     }
   }, [timeLeft]);
 
-  // Send trip details to backend to generate QR code
+  // Send trip details to backend (or queue if offline)
   useEffect(() => {
     const sendTripToBackend = async () => {
       if (!trip) return;
-      try {
-        const response = await fetch('http://10.130.1.95:8000/api/trips/create/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone_number: trip.currentLocation ?? '0000000000',
-            origin_lat: trip.destinationCoords?.latitude ?? 0,
-            origin_lng: trip.destinationCoords?.longitude ?? 0,
-            destination_name: trip.destination ?? 'Unknown',
-            destination_lat: trip.destinationCoords?.latitude ?? 0,
-            destination_lng: trip.destinationCoords?.longitude ?? 0,
-            distance_km: trip.distance ?? 0,
-            fare: trip.fare ?? 0,
-          }),
-        });
 
-        const data = await response.json();
-        if (data?.qr_code) {
-          setQrCode(data.qr_code);
+      const tripData = {
+        phone_number: trip.currentLocation ?? '0000000000',
+        origin_lat: trip.destinationCoords?.latitude ?? 0,
+        origin_lng: trip.destinationCoords?.longitude ?? 0,
+        destination_name: trip.destination ?? 'Unknown',
+        destination_lat: trip.destinationCoords?.latitude ?? 0,
+        destination_lng: trip.destinationCoords?.longitude ?? 0,
+        distance_km: trip.distance ?? 0,
+        fare: trip.fare ?? 0,
+        qr_code: ticketId,
+      };
+
+      if (isOnline) {
+        // Send to backend
+        try {
+          const response = await fetch('http://10.130.5.46:8000/api/trips/create/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(tripData),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.qr_code) {
+              setQrCode(data.qr_code);
+            }
+            setSyncStatus('synced');
+          } else {
+            throw new Error('Failed to create trip');
+          }
+        } catch (error) {
+          console.log('Failed to send trip to backend, queuing offline:', error);
+          // Queue for later sync
+          await queueTrip(tripData);
+          setSyncStatus('pending');
+          Alert.alert(
+            'Offline Mode',
+            'Trip saved locally and will sync when online.'
+          );
         }
-      } catch (error) {
-        console.log('Failed to send trip to backend', error);
+      } else {
+        // Queue offline
+        try {
+          await queueTrip(tripData);
+          setSyncStatus('pending');
+          Alert.alert(
+            'Offline Mode',
+            'Trip saved locally and will sync when online.'
+          );
+        } catch (error) {
+          console.error('Failed to queue trip:', error);
+          Alert.alert('Error', 'Failed to save trip locally');
+        }
       }
     };
 
     sendTripToBackend();
-  }, [trip]);
+  }, [trip, isOnline, ticketId]);
 
   const handleContinue = () => {
     router.replace('/(tabs)');
@@ -132,6 +168,30 @@ export default function ConfirmationScreen() {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Sync Status Indicator */}
+        {syncStatus !== 'idle' && (
+          <View
+            style={[
+              styles.syncStatusBanner,
+              syncStatus === 'synced'
+                ? styles.syncStatusSuccess
+                : styles.syncStatusPending,
+            ]}
+          >
+            <Text
+              style={
+                syncStatus === 'synced'
+                  ? styles.syncStatusTextSuccess
+                  : styles.syncStatusTextPending
+              }
+            >
+              {syncStatus === 'synced'
+                ? '✓ Trip synced to server'
+                : '⟳ Trip saved locally (will sync when online)'}
+            </Text>
+          </View>
+        )}
+
         {/* Success Banner */}
         <View style={styles.successBanner}>
           <Text style={styles.successBannerIcon}>✓</Text>
@@ -442,6 +502,36 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Sync Status Styles
+  syncStatusBanner: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncStatusSuccess: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  syncStatusPending: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  syncStatusTextSuccess: {
+    color: '#166534',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  syncStatusTextPending: {
+    color: '#92400E',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   bottomPadding: {
