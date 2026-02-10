@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera, CameraView, BarcodeScanningResult } from 'expo-camera';
 import { decrementPassengerCount, incrementPassengerCount } from '../utils/passengerCounter';
+import { API_BASE_URL } from '../utils/api';
 
 type BreakAction = 'out' | 'in';
 
@@ -142,7 +143,7 @@ export default function BusBreakScreen() {
 
 	const validateOnServer = async (qr: string) => {
 		try {
-			const res = await fetch('http://10.130.5.46:8000/api/trips/validate/', {
+			const res = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ qr_code: qr }),
@@ -164,9 +165,10 @@ export default function BusBreakScreen() {
 
 	return (
 		<View style={styles.container}>
-			<TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-				<Text style={styles.backButtonText}>← Back to Home</Text>
-			</TouchableOpacity>
+			<ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+				<TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+					<Text style={styles.backButtonText}>← Back to Home</Text>
+				</TouchableOpacity>
 
 			<View style={styles.card}>
 				<View style={styles.header}>
@@ -287,6 +289,7 @@ export default function BusBreakScreen() {
 					Tip: Make sure to scan both when leaving and returning to ensure proper tracking.
 				</Text>
 			</View>
+			</ScrollView>
 		</View>
 	);
 }
@@ -296,6 +299,9 @@ const styles = StyleSheet.create({
 		flex: 1,
 		backgroundColor: '#0F172A',
 		paddingTop: 8,
+	},
+	scrollView: {
+		flex: 1,
 	},
 	backButton: {
 		paddingHorizontal: 20,

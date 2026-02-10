@@ -3,9 +3,8 @@ import { router } from 'expo-router';
 import { useTrip } from '../utils/TripContext';
 import { queuePayment } from '../utils/offlineDatabase';
 import { useConnectivity } from '../utils/ConnectivityManager';
+import { API_BASE_URL } from '../utils/api';
 import { useState, useEffect } from 'react';
-
-const API_BASE_URL = 'http://10.130.5.46:8000';
 
 // Simple UUID generator
 const generateUUID = () => {
@@ -30,11 +29,12 @@ function TestDataItem({ label, value, onCopy }: { label: string; value: string; 
 }
 
 export default function PaymentScreen() {
-  const { trip } = useTrip();
+  const { trip, updateTrip } = useTrip();
   const { isOnline } = useConnectivity();
   const [selectedPayment, setSelectedPayment] = useState<'ecocash' | 'card' | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('+263 77 123 4567');
   const [payerPhoneNumber, setPayerPhoneNumber] = useState('+263 77 987 6543');
+  const [email, setEmail] = useState('');
   const [cardNumber, setCardNumber] = useState('1234 5678 9012 3456');
   const [expiryDate, setExpiryDate] = useState('MM/YY');
   const [cvv, setCvv] = useState('123');
@@ -45,6 +45,7 @@ export default function PaymentScreen() {
   // Fetch test data on component mount
   useEffect(() => {
     fetchTestData();
+    testAPIConnection();
   }, []);
 
   const fetchTestData = async () => {
@@ -59,19 +60,49 @@ export default function PaymentScreen() {
     }
   };
 
+  const testAPIConnection = async () => {
+    try {
+      console.log('Testing API connection to:', `${API_BASE_URL}/api/trips/health/`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${API_BASE_URL}/api/trips/health/`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      console.log('API health check status:', response.status);
+      const data = await response.json();
+      console.log('API health check response:', data);
+    } catch (error) {
+      console.warn('API connection test failed:', error);
+    }
+  };
+
   const initiatePayment = async () => {
     if (!selectedPayment) {
       Alert.alert('Payment Method Required', 'Please select a payment method');
       return;
     }
 
-    if (!phoneNumber.trim()) {
-      Alert.alert('Phone Number Required', 'Please enter your phone number');
+    if (selectedPayment === 'ecocash' && !phoneNumber.trim()) {
+      Alert.alert('Phone Number Required', 'Please enter the payment phone number');
+      return;
+    }
+
+    if (!email.trim()) {
+      Alert.alert('Email Required', 'Please enter your email to receive the QR code');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     if (selectedPayment === 'ecocash' && !payerPhoneNumber.trim()) {
-      Alert.alert('Payer Phone Number Required', 'Please enter the payer phone number');
+      Alert.alert('Payer Phone Number Required', 'Please enter the payer phone number for EcoCash');
       return;
     }
 
@@ -90,12 +121,18 @@ export default function PaymentScreen() {
       }
     }
 
+    // Persist email for confirmation screen usage (email delivery of QR)
+    if (email.trim()) {
+      updateTrip({ email: email.trim() }).catch(() => {});
+    }
+
     setIsProcessing(true);
 
     const reference = `BUS-${Date.now()}-${generateUUID().substring(0, 8)}`;
     const paymentData: any = {
       payment_method: selectedPayment,
       phone_number: phoneNumber,
+      email: email.trim(),
       amount: trip?.fare,
       destination: trip?.destination,
       reference,
@@ -110,6 +147,9 @@ export default function PaymentScreen() {
     try {
       if (isOnline) {
         // Send to backend
+        console.log('Initiating payment to:', `${API_BASE_URL}/api/trips/payment/initiate/`);
+        console.log('API_BASE_URL:', API_BASE_URL);
+        
         const response = await fetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
           method: 'POST',
           headers: {
@@ -161,6 +201,8 @@ export default function PaymentScreen() {
       }
     } catch (error) {
       console.error('Payment error:', error);
+      console.error('Error message:', (error as any)?.message);
+      console.error('Error type:', (error as any)?.constructor?.name);
 
       if (!isOnline) {
         // Try to queue even if online request failed
@@ -286,32 +328,46 @@ export default function PaymentScreen() {
           </View>
         </View>
 
-        {/* Phone Number Section */}
-        <View style={styles.phoneCard}>
-          <Text style={styles.phoneLabel}>Passenger's Phone Number <Text style={styles.required}>*</Text></Text>
-          <View style={styles.phoneInputContainer}>
-            <Text style={styles.phonePrefix}>📞</Text>
+        {/* Payment Phone Number (EcoCash only) */}
+        {selectedPayment === 'ecocash' && (
+          <View style={styles.phoneCard}>
+            <Text style={styles.phoneLabel}>Payment Phone Number <Text style={styles.required}>*</Text></Text>
+            <View style={styles.phoneInputContainer}>
+              <Text style={styles.phonePrefix}>📞</Text>
+              <TextInput
+                style={styles.phoneInput}
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                placeholder="+263 77 123 4567"
+                placeholderTextColor="#64748B"
+                keyboardType="phone-pad"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Email Section - For receiving QR code */}
+        <View style={styles.emailCard}>
+          <Text style={styles.emailLabel}>Email Address <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.emailSubtitle}>Your QR code will be sent to this email</Text>
+          <View style={styles.emailInputContainer}>
+            <Text style={styles.emailPrefix}>📧</Text>
             <TextInput
-              style={styles.phoneInput}
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              placeholder="+263 77 123 4567"
+              style={styles.emailInput}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="your.email@example.com"
               placeholderTextColor="#64748B"
-              keyboardType="phone-pad"
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
           </View>
-          <Text style={styles.phoneNote}>QR code will be sent to this number via SMS</Text>
+          <Text style={styles.emailNote}>Make sure this is a valid email where you can receive the QR code</Text>
         </View>
 
         {/* EcoCash Specific Fields */}
         {selectedPayment === 'ecocash' && (
           <>
-            {/* Note Section */}
-            <View style={styles.noteCard}>
-              <Text style={styles.noteLabel}>Note:</Text>
-              <Text style={styles.noteText}>Someone else can pay for this passenger</Text>
-            </View>
-
             {/* Payer Phone Number */}
             <View style={styles.phoneCard}>
               <Text style={styles.phoneLabel}>Payer's Phone Number (EcoCash) <Text style={styles.required}>*</Text></Text>
@@ -334,15 +390,15 @@ export default function PaymentScreen() {
               <Text style={styles.instructionsTitle}>EcoCash Payment Instructions:</Text>
               <View style={styles.instructionItem}>
                 <Text style={styles.instructionNumber}>1.</Text>
-                <Text style={styles.instructionText}>Payment prompt will be sent to the payer's number</Text>
+                <Text style={styles.instructionText}>Payment prompt will be sent to the payer's phone number</Text>
               </View>
               <View style={styles.instructionItem}>
                 <Text style={styles.instructionNumber}>2.</Text>
-                <Text style={styles.instructionText}>Payer enters their EcoCash PIN to confirm</Text>
+                <Text style={styles.instructionText}>Confirm payment by entering your EcoCash PIN</Text>
               </View>
               <View style={styles.instructionItem}>
                 <Text style={styles.instructionNumber}>3.</Text>
-                <Text style={styles.instructionText}>QR code will be sent to the passenger's number</Text>
+                <Text style={styles.instructionText}>Your QR code will be sent to your email</Text>
               </View>
             </View>
           </>
@@ -691,6 +747,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   phoneNote: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+
+  // Email Card
+  emailCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 20,
+    marginBottom: 24,
+  },
+  emailLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  emailSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 12,
+  },
+  emailInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  emailPrefix: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  emailInput: {
+    flex: 1,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    fontSize: 14,
+  },
+  emailNote: {
     fontSize: 12,
     color: '#94A3B8',
     fontStyle: 'italic',

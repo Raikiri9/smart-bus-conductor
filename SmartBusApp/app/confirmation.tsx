@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { incrementPassengerCount } from '../utils/passengerCounter';
 import { queueTrip } from '../utils/offlineDatabase';
 import { useConnectivity } from '../utils/ConnectivityManager';
+import { API_BASE_URL } from '../utils/api';
 import * as Speech from 'expo-speech';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -26,6 +27,7 @@ export default function ConfirmationScreen() {
   const [totalSeats] = useState(60);
   const [passengerAdded, setPassengerAdded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'synced'>('idle');
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   const qrPayload = {
     ticketId,
@@ -34,12 +36,49 @@ export default function ConfirmationScreen() {
     fare: trip?.fare ?? 0,
     distanceKm: trip?.distance ?? null,
     timestamp: new Date().toISOString(),
-    note: 'Show this QR to the conductor for verification',
+    note: 'Show this QR to the bus driver for verification',
   };
 
   const qrValue = JSON.stringify(qrPayload);
   const qrValueToRender = qrCode ?? qrValue;
   const qrSize = 220;
+
+  const sendEmailWithQRCode = async () => {
+    if (!isOnline || !trip?.email || emailStatus !== 'idle') return;
+
+    setEmailStatus('sending');
+
+    const payload = {
+      email: trip.email,
+      ticket_id: ticketId,
+      destination: trip?.destination ?? 'Unknown destination',
+      origin: trip?.currentLocation ?? 'Unknown origin',
+      fare: trip?.fare ?? 0,
+      distance_km: trip?.distance ?? 0,
+      origin_lat: trip?.destinationCoords?.latitude ?? null,
+      origin_lon: trip?.destinationCoords?.longitude ?? null,
+      destination_lat: trip?.destinationCoords?.latitude ?? null,
+      destination_lon: trip?.destinationCoords?.longitude ?? null,
+      qr_payload: qrPayload,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/trips/send-qr-email/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (response.ok && result?.success) {
+        setEmailStatus('sent');
+      } else {
+        setEmailStatus('failed');
+      }
+    } catch (error) {
+      setEmailStatus('failed');
+    }
+  };
 
   // Increment passenger count and play welcome voice alert
   useEffect(() => {
@@ -101,7 +140,7 @@ export default function ConfirmationScreen() {
       if (isOnline) {
         // Send to backend
         try {
-          const response = await fetch('http://10.130.5.46:8000/api/trips/create/', {
+          const response = await fetch(`${API_BASE_URL}/api/trips/create/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(tripData),
@@ -113,6 +152,7 @@ export default function ConfirmationScreen() {
               setQrCode(data.qr_code);
             }
             setSyncStatus('synced');
+            await sendEmailWithQRCode();
           } else {
             throw new Error('Failed to create trip');
           }
@@ -195,7 +235,7 @@ export default function ConfirmationScreen() {
         {/* Success Banner */}
         <View style={styles.successBanner}>
           <Text style={styles.successBannerIcon}>✓</Text>
-          <Text style={styles.successBannerText}>Payment confirmed! QR code sent to your phone.</Text>
+          <Text style={styles.successBannerText}>Payment confirmed! Your QR code is ready.</Text>
         </View>
 
         {/* Success Card */}
@@ -235,15 +275,6 @@ export default function ConfirmationScreen() {
 
             {/* Ticket ID */}
             <Text style={styles.ticketId}>{ticketId}</Text>
-          </View>
-
-          {/* QR Code Sent Info */}
-          <View style={styles.qrSentCard}>
-            <Text style={styles.qrSentIcon}>📋</Text>
-            <View style={styles.qrSentContent}>
-              <Text style={styles.qrSentLabel}>QR Code sent to:</Text>
-              <Text style={styles.qrSentNumber}>{trip.currentLocation ? `+263777747698` : '+263777747698'}</Text>
-            </View>
           </View>
 
           {/* Instructions List */}
@@ -434,14 +465,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#3B82F6',
     padding: 16,
+    marginBottom: 20,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 20,
-    width: '100%',
   },
   qrSentIcon: {
-    fontSize: 24,
+    fontSize: 28,
   },
   qrSentContent: {
     flex: 1,

@@ -6,8 +6,7 @@ import {
   markPaymentSynced,
   markValidationSynced,
 } from './offlineDatabase';
-
-const API_BASE_URL = 'http://10.130.5.46:8000';
+import { API_BASE_URL } from './api';
 
 export class OfflineQueueManager {
   // Sync pending trips to backend

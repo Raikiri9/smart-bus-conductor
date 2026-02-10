@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import calculateDistance from './distance';
+import { API_BASE_URL } from './api';
 
 type TripType = {
   destination: string;
@@ -13,6 +14,7 @@ type TripType = {
   destinationCoords?: { latitude: number; longitude: number };
   approachingNotified?: boolean;
   overTravelNotified?: boolean;
+  email?: string;
 };
 
 type TripContextType = {
@@ -167,7 +169,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const checkVoiceAlerts = async () => {
     if (!busLocation) return;
     try {
-      const res = await fetch('http://10.130.5.46:8000/api/trips/active/');
+      const res = await fetch(`${API_BASE_URL}/api/trips/active/`);
       const trips = await res.json();
 
       trips.forEach((t: any) => {

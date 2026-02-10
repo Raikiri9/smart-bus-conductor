@@ -39,6 +39,25 @@ export default function DestinationScreen() {
   const [fare, setFare] = useState(0);
   const [cachedDestinations, setCachedDestinations] = useState<any[]>([]);
 
+  const formatPlaceName = (place: any) => {
+    if (!place) return 'Unknown location';
+    
+    const address = place?.address || {};
+    const locality = address.city || address.town || address.village || address.suburb || address.hamlet;
+    const province = address.state || address.county || address.region;
+    const country = address.country;
+
+    // Build formatted name with locality, province, country
+    const parts = [locality, province, country].filter(p => p && p.trim());
+    
+    if (parts.length > 0) {
+      return parts.join(', ');
+    }
+    
+    // Fallback to display_name if formatting doesn't work
+    return place?.display_name || 'Unknown location';
+  };
+
   // Get bus GPS location
   useEffect(() => {
     (async () => {
@@ -96,74 +115,103 @@ export default function DestinationScreen() {
 
   // Search destination using OpenStreetMap (Nominatim) or cached destinations
   const searchDestination = async () => {
-    if (!query) return;
-
-    // If offline, search from cached destinations
-    if (!isOnline) {
-      const filtered = cachedDestinations.filter(dest => 
-        dest.name.toLowerCase().includes(query.toLowerCase())
-      );
-      
-      if (filtered.length === 0) {
-        Alert.alert(
-          'Offline Mode',
-          'No cached destinations match your search. Previously visited destinations are available offline.',
-          [{ text: 'OK' }]
-        );
-      }
-      
-      // Convert cached format to search result format
-      const formattedResults = filtered.map(dest => ({
-        lat: dest.latitude.toString(),
-        lon: dest.longitude.toString(),
-        display_name: dest.name,
-        cached: true
-      }));
-      
-      setResults(formattedResults);
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setResults([]);
       return;
     }
 
-    // Online search using OpenStreetMap
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=zw`,
-        {
-          headers: {
-            'User-Agent': 'SmartBusApp/1.0'
-          }
-        }
+    const buildCachedResults = () => {
+      const filtered = cachedDestinations.filter(dest =>
+        dest.name.toLowerCase().includes(trimmedQuery.toLowerCase())
       );
-      
-      if (!response.ok) {
-        console.log('Search failed:', response.status);
-        setResults([]);
-        return;
-      }
 
-      const data = await response.json();
-      setResults(data || []);
-    } catch (error) {
-      console.log('Search error:', error);
-      // Fallback to cached destinations on network error
-      const filtered = cachedDestinations.filter(dest => 
-        dest.name.toLowerCase().includes(query.toLowerCase())
-      );
       const formattedResults = filtered.map(dest => ({
         lat: dest.latitude.toString(),
         lon: dest.longitude.toString(),
         display_name: dest.name,
         cached: true
       }));
+
       setResults(formattedResults);
-      
-      if (formattedResults.length > 0) {
-        Alert.alert(
-          'Connection Issue',
-          'Showing cached destinations due to network error.',
-          [{ text: 'OK' }]
+      return formattedResults;
+    };
+
+    const shouldTryOnline = isOnline || cachedDestinations.length === 0;
+
+    if (shouldTryOnline) {
+      try {
+        const encodedQuery = encodeURIComponent(trimmedQuery);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodedQuery}&countrycodes=zw&limit=10`,
+          {
+            headers: {
+              'User-Agent': 'SmartBusApp/1.0'
+            },
+            signal: controller.signal
+          }
         );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          console.log('Search failed:', response.status);
+          const cached = buildCachedResults();
+          if (cached.length === 0) setResults([]);
+          return;
+        }
+
+        const data = await response.json();
+        console.log('Raw API response:', JSON.stringify(data, null, 2));
+        console.log('Number of results:', data?.length);
+        
+        if (!data || data.length === 0) {
+          console.log('No results returned from API');
+          setResults([]);
+          return;
+        }
+
+        const normalized = (data || []).map((item: any) => ({
+          ...item,
+          display_name: formatPlaceName(item),
+        }));
+        console.log('Normalized results:', JSON.stringify(normalized, null, 2));
+        setResults(normalized);
+        return;
+      } catch (error) {
+        console.log('Search error:', error);
+        const cached = buildCachedResults();
+
+        if (cached.length > 0) {
+          Alert.alert(
+            'Connection Issue',
+            'Showing cached destinations due to network error.',
+            [{ text: 'OK' }]
+          );
+        }
+
+        if (cached.length === 0 && !isOnline) {
+          Alert.alert(
+            'Offline Mode',
+            'No cached destinations match your search. Previously visited destinations are available offline.',
+            [{ text: 'OK' }]
+          );
+        }
+        return;
       }
+    }
+
+    // Offline search from cached destinations
+    const cached = buildCachedResults();
+    if (cached.length === 0) {
+      Alert.alert(
+        'Offline Mode',
+        'No cached destinations match your search. Previously visited destinations are available offline.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -274,7 +322,7 @@ export default function DestinationScreen() {
     try {
       // Reverse geocode the selected point
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coordinate.latitude}&lon=${coordinate.longitude}`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${coordinate.latitude}&lon=${coordinate.longitude}`,
         {
           headers: {
             'User-Agent': 'SmartBusApp/1.0'
@@ -287,10 +335,10 @@ export default function DestinationScreen() {
         
         // Only accept locations with proper city/town/village names
         const locationName = data.address?.city || 
-                            data.address?.town || 
-                            data.address?.village || 
-                            data.address?.suburb ||
-                            null;
+                data.address?.town || 
+                data.address?.village || 
+                data.address?.suburb ||
+                null;
         
         if (!locationName) {
           console.log('No named location found at this point');
@@ -302,7 +350,7 @@ export default function DestinationScreen() {
         const dest = {
           latitude: coordinate.latitude,
           longitude: coordinate.longitude,
-          name: data.display_name,
+          name: formatPlaceName(data),
         };
 
         setDestination(dest);
@@ -367,6 +415,9 @@ export default function DestinationScreen() {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* DEBUG: Check if results exist */}
+        {results.length > 0 && console.log('🔴 RENDERING RESULTS:', results.length)}
+        
         {/* Header */}
         <TouchableOpacity 
           style={styles.backButton}
@@ -425,22 +476,25 @@ export default function DestinationScreen() {
         {/* Search Results */}
         {results.length > 0 && (
           <View style={styles.resultsContainer}>
-            {results.map((item, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.resultItem}
-                onPress={() => selectDestination(item)}
-              >
-                <View style={styles.resultContent}>
-                  <Text style={styles.resultText}>{item.display_name}</Text>
-                  {item.cached && (
-                    <View style={styles.cachedBadge}>
-                      <Text style={styles.cachedBadgeText}>💾 Cached</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
+            {results.map((item, index) => {
+              console.log(`Item ${index}:`, item.display_name);
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.resultItem}
+                  onPress={() => selectDestination(item)}
+                >
+                  <View style={styles.resultContent}>
+                    <Text style={styles.resultText}>{item.display_name}</Text>
+                    {item.cached && (
+                      <View style={styles.cachedBadge}>
+                        <Text style={styles.cachedBadgeText}>💾 Cached</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -687,16 +741,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#334155',
-    maxHeight: 200,
+    maxHeight: 300,
+    overflow: 'hidden',
   },
   resultItem: {
     padding: 12,
+    minHeight: 44,
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
+    justifyContent: 'center',
   },
   resultText: {
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '500',
   },
   mapContainer: {
     marginHorizontal: 20,

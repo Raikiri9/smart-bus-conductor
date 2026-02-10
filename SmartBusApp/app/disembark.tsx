@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { decrementPassengerCount } from '../utils/passengerCounter';
 import { Camera, CameraView, BarcodeScanningResult } from 'expo-camera';
+import { API_BASE_URL } from '../utils/api';
 
 export default function DisembarkScreen() {
 	const [qrCode, setQrCode] = useState('');
@@ -70,7 +71,7 @@ export default function DisembarkScreen() {
 
 	const validateOnServer = async (qr: string) => {
 		try {
-			const res = await fetch('http://10.130.5.46:8000/api/trips/validate/', {
+			const res = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ qr_code: qr }),
@@ -114,9 +115,10 @@ export default function DisembarkScreen() {
 
 	return (
 		<View style={styles.container}>
-			<TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-				<Text style={styles.backButtonText}>← Back to Home</Text>
-			</TouchableOpacity>
+			<ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+				<TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+					<Text style={styles.backButtonText}>← Back to Home</Text>
+				</TouchableOpacity>
 
 			<View style={styles.card}>
 				<View style={styles.header}>
@@ -191,12 +193,7 @@ export default function DisembarkScreen() {
 				</View>
 			</View>
 
-			<View style={styles.notice}>
-				<Text style={styles.noticeIcon}>⚠</Text>
-				<Text style={styles.noticeText}>
-					Note: If you disembark more than 40km before your destination, it will be registered as a restroom break.
-				</Text>
-			</View>
+			</ScrollView>
 		</View>
 	);
 }
@@ -205,6 +202,9 @@ const styles = StyleSheet.create({
 	container: {
 		flex: 1,
 		backgroundColor: '#0F172A',
+	},
+	scrollView: {
+		flex: 1,
 	},
 	backButton: {
 		paddingHorizontal: 20,

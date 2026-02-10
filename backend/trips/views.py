@@ -3,7 +3,7 @@ import uuid
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-from .models import Trip
+from .models import Trip, PassengerTrip
 from .paynow_utils import (
 	create_ecocash_payment,
 	create_card_payment,
@@ -12,6 +12,10 @@ from .paynow_utils import (
 	get_test_card_tokens,
 	TEST_MODE,
 )
+
+
+def health_check(request):
+	return JsonResponse({"status": "ok"})
 
 
 @csrf_exempt
@@ -218,3 +222,242 @@ def get_test_data(request):
 		}
 	})
 
+
+@csrf_exempt
+def send_qr_email(request):
+	"""
+	Send QR code to user's email address.
+	
+	POST data:
+	{
+		"email": "user@example.com",
+		"ticket_id": "BUS-xxx",
+		"destination": "Harare",
+		"origin": "Bulawayo",
+		"fare": 5.00,
+		"distance_km": 150,
+		"qr_payload": {...}
+	}
+	"""
+	if request.method != "POST":
+		return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+	
+	try:
+		data = json.loads(request.body)
+		email = data.get("email", "").strip()
+		ticket_id = data.get("ticket_id", "")
+		destination = data.get("destination", "Unknown")
+		origin = data.get("origin", "Unknown")
+		fare = data.get("fare", 0)
+		distance_km = data.get("distance_km", 0)
+		qr_payload = data.get("qr_payload", {})
+		
+		# Validate email
+		if not email or "@" not in email:
+			return JsonResponse({"success": False, "error": "Invalid email address"})
+		
+		# Import email functions
+		from django.core.mail import EmailMultiAlternatives
+		from django.conf import settings
+		import json as json_module
+		from io import BytesIO
+		import qrcode
+		from email.mime.image import MIMEImage
+		
+		# Prepare email content
+		qr_json = json_module.dumps(qr_payload, indent=2)
+		qr_image = qrcode.make(qr_json)
+		qr_buffer = BytesIO()
+		qr_image.save(qr_buffer, format="PNG")
+		qr_bytes = qr_buffer.getvalue()
+		
+		subject = f"Your Smart Bus Ticket - {ticket_id}"
+		
+		html_message = f"""
+		<html>
+		<head>
+			<style>
+				body {{ font-family: Arial, sans-serif; background-color: #f5f5f5; }}
+				.container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+				.header {{ text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3B82F6; padding-bottom: 20px; }}
+				.header h1 {{ color: #0F172A; margin: 0; font-size: 28px; }}
+				.header p {{ color: #666; margin: 5px 0 0 0; }}
+				.ticket-details {{ background-color: #f9fafb; padding: 15px; border-radius: 6px; margin-bottom: 20px; }}
+				.detail-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }}
+				.detail-row:last-child {{ border-bottom: none; }}
+				.detail-label {{ color: #666; font-weight: bold; }}
+				.detail-value {{ color: #000; }}
+				.qr-section {{ text-align: center; margin: 30px 0; padding: 20px; background-color: #f9fafb; border-radius: 6px; }}
+				.qr-section h3 {{ color: #0F172A; margin-top: 0; }}
+				.qr-code {{ background-color: #ffffff; padding: 10px; border: 1px solid #e5e7eb; border-radius: 4px; display: inline-block; }}
+				.qr-payload {{ background-color: #0F172A; color: #e5e7eb; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; text-align: left; margin-top: 15px; overflow-x: auto; }}
+				.instructions {{ background-color: #ecfdf5; border-left: 4px solid #10B981; padding: 15px; margin: 20px 0; border-radius: 4px; }}
+				.instructions h3 {{ color: #065f46; margin-top: 0; }}
+				.instructions ol {{ color: #047857; margin: 10px 0; }}
+				.footer {{ text-align: center; color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px; }}
+			</style>
+		</head>
+		<body>
+			<div class="container">
+				<div class="header">
+					<h1>🚌 Smart Bus Ticket</h1>
+					<p>Your Journey Confirmation</p>
+				</div>
+				
+				<div class="ticket-details">
+					<div class="detail-row">
+						<span class="detail-label">Ticket ID:</span>
+						<span class="detail-value"><strong>{ticket_id}</strong></span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Origin:</span>
+						<span class="detail-value">{origin}</span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Destination:</span>
+						<span class="detail-value">{destination}</span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Distance:</span>
+						<span class="detail-value">{distance_km:.1f} km</span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Fare:</span>
+						<span class="detail-value">${fare:.2f}</span>
+					</div>
+				</div>
+				
+				<div class="instructions">
+					<h3>📋 How to Use Your Ticket:</h3>
+					<ol>
+						<li>Keep this email and the QR code below safe</li>
+						<li>Present the QR code to the bus driver when boarding</li>
+						<li>The bus driver will scan your QR code to verify your ticket</li>
+						<li>Keep your ticket throughout your journey</li>
+					</ol>
+				</div>
+				
+				<div class="qr-section">
+					<h3>Your QR Code:</h3>
+					<p>Use this QR code for boarding:</p>
+					<div class="qr-code">
+						<img src="cid:qr_code" alt="QR Code" style="width: 220px; height: 220px;" />
+					</div>
+					<p style="color: #666; font-size: 12px; margin-top: 10px;">
+						If you cannot scan, show this code to the bus driver
+					</p>
+				</div>
+				
+				<div class="footer">
+					<p>Thank you for using Smart Bus Conductor!</p>
+					<p>Questions? Contact our support team</p>
+					<p style="color: #ccc; margin-top: 10px;">© 2026 Smart Bus Conductor. All rights reserved.</p>
+				</div>
+			</div>
+		</body>
+		</html>
+		"""
+		
+		def mark_passenger_trip():
+			PassengerTrip.objects.update_or_create(
+				ticket_id=ticket_id,
+				defaults={
+					"origin": origin,
+					"destination": destination,
+					"fare": fare,
+					"distance_km": distance_km,
+					"origin_lat": data.get("origin_lat"),
+					"origin_lon": data.get("origin_lon"),
+					"destination_lat": data.get("destination_lat"),
+					"destination_lon": data.get("destination_lon"),
+					"status": "active",
+				},
+			)
+
+		# Send email
+		try:
+			text_message = f"Your ticket ID: {ticket_id}\n\nQR Payload:\n{qr_json}"
+			message = EmailMultiAlternatives(
+				subject=subject,
+				body=text_message,
+				from_email=settings.DEFAULT_FROM_EMAIL or "noreply@smartbus.com",
+				to=[email],
+			)
+			message.attach_alternative(html_message, "text/html")
+			image = MIMEImage(qr_bytes, _subtype="png")
+			image.add_header("Content-ID", "<qr_code>")
+			image.add_header("Content-Disposition", "inline", filename="qr.png")
+			message.attach(image)
+			message.send()
+
+			# Update passenger trip record after successful email send
+			mark_passenger_trip()
+			
+			return JsonResponse({
+				"success": True,
+				"message": f"QR code sent successfully to {email}"
+			})
+		
+		except Exception as email_error:
+			error_text = str(email_error)
+			print(f"Email sending error: {email_error}")
+			if "CERTIFICATE_VERIFY_FAILED" in error_text:
+				try:
+					import smtplib
+					from email.message import EmailMessage
+					import ssl as ssl_module
+
+					msg = EmailMessage()
+					msg["Subject"] = subject
+					msg["From"] = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER or "noreply@smartbus.com"
+					msg["To"] = email
+					msg.set_content(text_message)
+					msg.add_alternative(html_message, subtype="html")
+					msg.get_payload()[1].add_related(qr_bytes, maintype="image", subtype="png", cid="qr_code", filename="qr.png")
+
+					host = getattr(settings, "EMAIL_HOST", "smtp.gmail.com")
+					port = getattr(settings, "EMAIL_PORT", 587)
+					use_tls = getattr(settings, "EMAIL_USE_TLS", True)
+					use_ssl = getattr(settings, "EMAIL_USE_SSL", False)
+					user = getattr(settings, "EMAIL_HOST_USER", "")
+					password = getattr(settings, "EMAIL_HOST_PASSWORD", "")
+
+					context = ssl_module._create_unverified_context()
+					if use_ssl:
+						with smtplib.SMTP_SSL(host, port, context=context) as server:
+							if user and password:
+								server.login(user, password)
+							server.send_message(msg)
+					else:
+						with smtplib.SMTP(host, port) as server:
+							server.ehlo()
+							if use_tls:
+								server.starttls(context=context)
+								server.ehlo()
+							if user and password:
+								server.login(user, password)
+							server.send_message(msg)
+
+					mark_passenger_trip()
+					return JsonResponse({
+						"success": True,
+						"message": f"QR code sent successfully to {email}"
+					})
+				except Exception as fallback_error:
+					print(f"Email fallback error: {fallback_error}")
+					return JsonResponse({
+						"success": False,
+						"error": f"Failed to send email: {str(fallback_error)}"
+					}, status=500)
+
+			return JsonResponse({
+				"success": False,
+				"error": f"Failed to send email: {str(email_error)}"
+			}, status=500)
+	
+	except Exception as error:
+		print(f"Error in send_qr_email: {error}")
+		return JsonResponse({
+			"success": False,
+			"error": f"Internal server error: {str(error)}"
+		}, status=500)
