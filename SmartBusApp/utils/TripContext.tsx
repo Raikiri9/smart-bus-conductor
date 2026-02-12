@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
-import calculateDistance from './distance';
+import calculateDistance, { routeDistanceKm } from './distance';
 import { API_BASE_URL } from './api';
 
 type TripType = {
@@ -172,13 +172,24 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${API_BASE_URL}/api/trips/active/`);
       const trips = await res.json();
 
-      trips.forEach((t: any) => {
-        const distanceKm = calculateDistance(
+      for (const t of trips) {
+        // Try road-based distance first, fall back to straight-line
+        let distanceKm = await routeDistanceKm(
           busLocation.latitude,
           busLocation.longitude,
           t.destination_lat,
           t.destination_lng
         );
+
+        if (distanceKm === null) {
+          // Fallback to straight-line distance if OSRM fails
+          distanceKm = calculateDistance(
+            busLocation.latitude,
+            busLocation.longitude,
+            t.destination_lat,
+            t.destination_lng
+          );
+        }
 
         if (distanceKm <= 5 && !alertedTrips.current.has(`approach-${t.id}`) && Platform.OS !== 'web') {
           Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching.`);
@@ -194,7 +205,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
           Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination.`);
           alertedTrips.current.add(`missed-${t.id}`);
         }
-      });
+      }
     } catch (error) {
       // ignore network errors
     }

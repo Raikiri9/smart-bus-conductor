@@ -32,8 +32,7 @@ export default function PaymentScreen() {
   const { trip, updateTrip } = useTrip();
   const { isOnline } = useConnectivity();
   const [selectedPayment, setSelectedPayment] = useState<'ecocash' | 'card' | null>(null);
-  const [phoneNumber, setPhoneNumber] = useState('+263 77 123 4567');
-  const [payerPhoneNumber, setPayerPhoneNumber] = useState('+263 77 987 6543');
+  const [phoneNumber, setPhoneNumber] = useState('+263 77 987 6543');
   const [email, setEmail] = useState('');
   const [cardNumber, setCardNumber] = useState('1234 5678 9012 3456');
   const [expiryDate, setExpiryDate] = useState('MM/YY');
@@ -85,7 +84,7 @@ export default function PaymentScreen() {
     }
 
     if (selectedPayment === 'ecocash' && !phoneNumber.trim()) {
-      Alert.alert('Phone Number Required', 'Please enter the payment phone number');
+      Alert.alert('Phone Number Required', 'Please enter your phone number for EcoCash payment');
       return;
     }
 
@@ -98,11 +97,6 @@ export default function PaymentScreen() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address');
-      return;
-    }
-
-    if (selectedPayment === 'ecocash' && !payerPhoneNumber.trim()) {
-      Alert.alert('Payer Phone Number Required', 'Please enter the payer phone number for EcoCash');
       return;
     }
 
@@ -138,9 +132,7 @@ export default function PaymentScreen() {
       reference,
     };
 
-    if (selectedPayment === 'ecocash') {
-      paymentData.payer_phone = payerPhoneNumber;
-    } else if (selectedPayment === 'card') {
+    if (selectedPayment === 'card') {
       paymentData.card_token = cardNumber.replace(/\s/g, '');
     }
 
@@ -328,24 +320,6 @@ export default function PaymentScreen() {
           </View>
         </View>
 
-        {/* Payment Phone Number (EcoCash only) */}
-        {selectedPayment === 'ecocash' && (
-          <View style={styles.phoneCard}>
-            <Text style={styles.phoneLabel}>Payment Phone Number <Text style={styles.required}>*</Text></Text>
-            <View style={styles.phoneInputContainer}>
-              <Text style={styles.phonePrefix}>📞</Text>
-              <TextInput
-                style={styles.phoneInput}
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                placeholder="+263 77 123 4567"
-                placeholderTextColor="#64748B"
-                keyboardType="phone-pad"
-              />
-            </View>
-          </View>
-        )}
-
         {/* Email Section - For receiving QR code */}
         <View style={styles.emailCard}>
           <Text style={styles.emailLabel}>Email Address <Text style={styles.required}>*</Text></Text>
@@ -368,15 +342,15 @@ export default function PaymentScreen() {
         {/* EcoCash Specific Fields */}
         {selectedPayment === 'ecocash' && (
           <>
-            {/* Payer Phone Number */}
+            {/* Phone Number */}
             <View style={styles.phoneCard}>
-              <Text style={styles.phoneLabel}>Payer's Phone Number (EcoCash) <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.phoneLabel}>Your Phone Number <Text style={styles.required}>*</Text></Text>
               <View style={styles.phoneInputContainer}>
                 <Text style={styles.phonePrefix}>📞</Text>
                 <TextInput
                   style={styles.phoneInput}
-                  value={payerPhoneNumber}
-                  onChangeText={setPayerPhoneNumber}
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
                   placeholder="+263 77 987 6543"
                   placeholderTextColor="#64748B"
                   keyboardType="phone-pad"
@@ -494,32 +468,32 @@ export default function PaymentScreen() {
                   label="Success (5s)"
                   value={testData.ecocash_test_numbers.success_5s}
                   onCopy={() => {
-                    setPayerPhoneNumber(testData.ecocash_test_numbers.success_5s);
-                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.success_5s);
+                    setPhoneNumber(testData.ecocash_test_numbers.success_5s);
+                    Alert.alert('Copied', 'Phone number set to ' + testData.ecocash_test_numbers.success_5s);
                   }}
                 />
                 <TestDataItem
                   label="Success Delayed (30s)"
                   value={testData.ecocash_test_numbers.success_30s}
                   onCopy={() => {
-                    setPayerPhoneNumber(testData.ecocash_test_numbers.success_30s);
-                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.success_30s);
+                    setPhoneNumber(testData.ecocash_test_numbers.success_30s);
+                    Alert.alert('Copied', 'Phone number set to ' + testData.ecocash_test_numbers.success_30s);
                   }}
                 />
                 <TestDataItem
                   label="Failed - User Cancelled"
                   value={testData.ecocash_test_numbers.failed_user_cancelled}
                   onCopy={() => {
-                    setPayerPhoneNumber(testData.ecocash_test_numbers.failed_user_cancelled);
-                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.failed_user_cancelled);
+                    setPhoneNumber(testData.ecocash_test_numbers.failed_user_cancelled);
+                    Alert.alert('Copied', 'Phone number set to ' + testData.ecocash_test_numbers.failed_user_cancelled);
                   }}
                 />
                 <TestDataItem
                   label="Failed - Insufficient Balance"
                   value={testData.ecocash_test_numbers.failed_insufficient_balance}
                   onCopy={() => {
-                    setPayerPhoneNumber(testData.ecocash_test_numbers.failed_insufficient_balance);
-                    Alert.alert('Copied', 'Payer phone number set to ' + testData.ecocash_test_numbers.failed_insufficient_balance);
+                    setPhoneNumber(testData.ecocash_test_numbers.failed_insufficient_balance);
+                    Alert.alert('Copied', 'Phone number set to ' + testData.ecocash_test_numbers.failed_insufficient_balance);
                   }}
                 />
 

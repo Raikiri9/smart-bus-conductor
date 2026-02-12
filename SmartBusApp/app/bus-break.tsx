@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView 
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera, CameraView, BarcodeScanningResult } from 'expo-camera';
-import { decrementPassengerCount, incrementPassengerCount } from '../utils/passengerCounter';
 import { API_BASE_URL } from '../utils/api';
 
 type BreakAction = 'out' | 'in';
@@ -99,15 +98,13 @@ export default function BusBreakScreen() {
 			if (isGoingOut) {
 				const updated = Array.from(new Set([...outsideTickets, payload.ticketId]));
 				await saveOutsideTickets(updated);
-				await decrementPassengerCount();
-				setValidationType('success');
-				setValidationMessage('Marked as outside. Occupancy updated.');
-			} else {
-				const updated = outsideTickets.filter((id) => id !== payload.ticketId);
-				await saveOutsideTickets(updated);
-				await incrementPassengerCount();
-				setValidationType('success');
-				setValidationMessage('Welcome back onboard. Occupancy updated.');
+			setValidationType('success');
+			setValidationMessage('Marked as outside. Still counted onboard.');
+		} else {
+			const updated = outsideTickets.filter((id) => id !== payload.ticketId);
+			await saveOutsideTickets(updated);
+			setValidationType('success');
+			setValidationMessage('Welcome back onboard. Status updated.');
 			}
 			setLastTicket(payload.ticketId);
 			setLastPassenger({ destination: payload.destination, origin: payload.origin, fare: payload.fare });

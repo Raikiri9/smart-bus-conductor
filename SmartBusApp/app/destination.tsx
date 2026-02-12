@@ -62,40 +62,80 @@ export default function DestinationScreen() {
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-
-      const loc = await Location.getCurrentPositionAsync({});
-      const coords = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      };
-      setCurrentLocation(coords);
-
-      // Reverse geocode to get location name
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
-          {
-            headers: {
-              'User-Agent': 'SmartBusApp/1.0'
-            }
-          }
+      
+      if (status !== "granted") {
+        Alert.alert(
+          'Location Permission Required', 
+          'Please enable location permissions in your device settings to use this app.',
+          [
+            { text: 'OK' }
+          ]
         );
-        
-        if (response.ok) {
-          const data = await response.json();
-          const locationName = data.address?.city || 
-                              data.address?.town || 
-                              data.address?.village || 
-                              data.address?.county ||
-                              'Current Location';
-          setCurrentLocationName(locationName);
-        } else {
+        return;
+      }
+
+      const updateLocation = async (coords: { latitude: number; longitude: number }) => {
+        setCurrentLocation(coords);
+
+        // Reverse geocode to get location name
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
+            {
+              headers: {
+                'User-Agent': 'SmartBusApp/1.0'
+              }
+            }
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            const locationName = data.address?.city || 
+                                data.address?.town || 
+                                data.address?.village || 
+                                data.address?.county ||
+                                'Current Location';
+            setCurrentLocationName(locationName);
+          } else {
+            setCurrentLocationName('Current Location');
+          }
+        } catch (error) {
+          console.log('Reverse geocoding error:', error);
           setCurrentLocationName('Current Location');
         }
+      };
+
+      try {
+        // Try to get current position with timeout
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 5000,
+          distanceInterval: 0,
+        });
+        
+        await updateLocation({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
       } catch (error) {
-        console.log('Reverse geocoding error:', error);
-        setCurrentLocationName('Current Location');
+        console.log('Current location error:', error);
+        Alert.alert(
+          'Location Unavailable', 
+          'Unable to get current location. Please ensure:\n\n' +
+          '1. Location services are enabled on your device\n' +
+          '2. The app has location permissions\n' +
+          '3. GPS signal is available',
+          [
+            { 
+              text: 'Retry', 
+              onPress: () => {
+                // Trigger re-fetch by forcing component remount
+                setCurrentLocation(null);
+              }
+            },
+            { text: 'Cancel' }
+          ]
+        );
       }
     })();
   }, []);
