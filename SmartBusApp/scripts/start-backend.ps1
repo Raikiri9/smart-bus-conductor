@@ -1,14 +1,16 @@
-# Start backend and ngrok before Expo
-Write-Host "Setting up backend services..." -ForegroundColor Yellow
+# Start Django backend server
+Write-Host "Starting Django backend server..." -ForegroundColor Green
 
-# Setup ngrok tunnel
-Set-Location "$PSScriptRoot\..\.."
-.\scripts\start-ngrok.ps1
+$backendPath = Join-Path $PSScriptRoot "..\..\backend"
 
-# Start Django backend in background
-Write-Host "Starting Django backend in background..." -ForegroundColor Yellow
-$BackendPath = "$PSScriptRoot\..\..\backend"
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$BackendPath'; Write-Host 'Django Backend - Keep this window open' -ForegroundColor Cyan; python manage.py runserver 0.0.0.0:8000" -WindowStyle Normal
+# Check if backend directory exists
+if (-not (Test-Path $backendPath)) {
+    Write-Host "Error: Backend directory not found at $backendPath" -ForegroundColor Red
+    exit 1
+}
 
-Write-Host "[OK] Backend ready! Starting Expo..." -ForegroundColor Green
-Start-Sleep -Seconds 2
+# Start backend in a new window
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendPath'; python manage.py runserver 0.0.0.0:8000"
+
+Write-Host "Backend server starting in new window..." -ForegroundColor Green
+Start-Sleep -Seconds 3

@@ -1,4 +1,5 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, Alert } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from "expo-location";
 import { useEffect, useState, useRef } from "react";
 import { router } from "expo-router";
@@ -79,6 +80,17 @@ export default function DestinationScreen() {
 
         // Reverse geocode to get location name
         try {
+          // Check cache first
+          const cacheKey = `geocode_${coords.latitude.toFixed(4)}_${coords.longitude.toFixed(4)}`;
+          const cached = await AsyncStorage.getItem(cacheKey);
+          
+          if (cached) {
+            console.log('Using cached location name:', cached);
+            setCurrentLocationName(cached);
+            return;
+          }
+
+          console.log('Fetching reverse geocode for:', coords.latitude, coords.longitude);
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
             {
@@ -88,15 +100,27 @@ export default function DestinationScreen() {
             }
           );
           
+          console.log('Reverse geocode response status:', response.status);
+          
           if (response.ok) {
             const data = await response.json();
+            console.log('Address data:', JSON.stringify(data.address, null, 2));
             const locationName = data.address?.city || 
                                 data.address?.town || 
                                 data.address?.village || 
                                 data.address?.county ||
                                 'Current Location';
+            console.log('Final location name:', locationName);
+            
+            // Cache the result for 24 hours
+            await AsyncStorage.setItem(cacheKey, locationName);
             setCurrentLocationName(locationName);
+          } else if (response.status === 509) {
+            console.log('Rate limited (509). Using coordinates as fallback.');
+            const coordsName = `Location (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`;
+            setCurrentLocationName(coordsName);
           } else {
+            console.log('Response not OK, using fallback');
             setCurrentLocationName('Current Location');
           }
         } catch (error) {

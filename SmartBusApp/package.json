@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-backend.ps1 && npm run expo",
+    "start:ngrok": "powershell -ExecutionPolicy Bypass -File ./scripts/start-backend.ps1 && cd .. && powershell -ExecutionPolicy Bypass -File ./scripts/start-ngrok.ps1 && cd SmartBusApp && expo start -c",
     "tunnel": "powershell -ExecutionPolicy Bypass -File ..\\scripts\\start-ngrok.ps1",
     "expo": "expo start",
     "backend": "cd ../backend && python manage.py runserver 0.0.0.0:8000",

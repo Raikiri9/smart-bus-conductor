@@ -58,7 +58,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SafeAreaProvider>
-        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom', 'left', 'right']}>
+        <SafeAreaView style={{ flex: 1 }} edges={[]}>
           <ConnectivityProvider>
             <PassengerProvider>
               <TripProvider>
@@ -71,7 +71,7 @@ export default function RootLayout() {
           </ConnectivityProvider>
         </SafeAreaView>
       </SafeAreaProvider>
-      <StatusBar style="auto" />
+      <StatusBar style="light" hidden={true} />
     </ThemeProvider>
   );
 }
