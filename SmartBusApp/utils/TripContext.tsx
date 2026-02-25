@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
@@ -192,7 +192,19 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (distanceKm <= 5 && !alertedTrips.current.has(`approach-${t.id}`) && Platform.OS !== 'web') {
-          Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching.`);
+          const distanceText = distanceKm < 1 
+            ? `${Math.round(distanceKm * 1000)} meters` 
+            : `${distanceKm.toFixed(1)} kilometers`;
+          
+          Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`);
+          
+          // Also show visual alert with distance
+          Alert.alert(
+            '📍 Approaching Destination',
+            `You are ${distanceText} away from ${t.destination_name}`,
+            [{ text: 'OK' }]
+          );
+          
           alertedTrips.current.add(`approach-${t.id}`);
         }
 
@@ -202,7 +214,19 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
           !alertedTrips.current.has(`missed-${t.id}`) &&
           Platform.OS !== 'web'
         ) {
-          Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination.`);
+          const distancePastText = distanceKm < 1 
+            ? `${Math.round(distanceKm * 1000)} meters` 
+            : `${distanceKm.toFixed(1)} kilometers`;
+          
+          Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`);
+          
+          // Visual alert for missed destination
+          Alert.alert(
+            '⚠️ Missed Destination',
+            `You have passed ${t.destination_name}. You are now ${distancePastText} past it. Please notify the driver.`,
+            [{ text: 'OK' }]
+          );
+          
           alertedTrips.current.add(`missed-${t.id}`);
         }
       }

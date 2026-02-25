@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { PassengerProvider } from '../utils/PassengerContext';
 import { TripProvider } from '../utils/TripContext';
 import { ConnectivityProvider } from '../utils/ConnectivityManager';
+import { SimulationProvider } from '../utils/SimulationContext';
 import { initializeDatabase } from '../utils/offlineDatabase';
 
 export const unstable_settings = {
@@ -60,14 +61,16 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1 }} edges={[]}>
           <ConnectivityProvider>
-            <PassengerProvider>
-              <TripProvider>
-                <Stack>
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                </Stack>
-              </TripProvider>
-            </PassengerProvider>
+            <SimulationProvider>
+              <PassengerProvider>
+                <TripProvider>
+                  <Stack>
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  </Stack>
+                </TripProvider>
+              </PassengerProvider>
+            </SimulationProvider>
           </ConnectivityProvider>
         </SafeAreaView>
       </SafeAreaProvider>

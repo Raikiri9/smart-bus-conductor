@@ -23,7 +23,8 @@ def create_trip(request):
 	if request.method == "POST":
 		data = json.loads(request.body)
 
-		qr_id = str(uuid.uuid4())
+		# Use QR code from request, or generate UUID as fallback
+		qr_id = data.get("qr_code") or str(uuid.uuid4())
 
 		trip = Trip.objects.create(
 			phone_number=data["phone_number"],
@@ -48,16 +49,57 @@ def create_trip(request):
 def validate_qr(request):
 	data = json.loads(request.body)
 	qr_code = data["qr_code"]
+	action = data.get("action", None)  # Can be: "validate", "disembark", "bus_break_out", "bus_break_in"
 
 	try:
-		trip = Trip.objects.get(qr_code=qr_code, boarded=True)
-		trip.completed = True
-		trip.boarded = False
-		trip.save()
-
-		return JsonResponse({"status": "valid"})
+		# Find active trip (boarded=True, completed=False)
+		trip = Trip.objects.get(qr_code=qr_code, boarded=True, completed=False)
+		
+		# Handle different actions
+		if action == "disembark":
+			# Passenger is getting off permanently
+			trip.completed = True
+			trip.boarded = False
+			trip.on_bus_break = False
+			trip.save()
+			return JsonResponse({
+				"status": "valid",
+				"action": "disembark",
+				"message": "Trip completed successfully"
+			})
+		
+		elif action == "bus_break_out":
+			# Passenger is temporarily leaving the bus
+			trip.on_bus_break = True
+			trip.save()
+			return JsonResponse({
+				"status": "valid",
+				"action": "bus_break_out",
+				"message": "Passenger marked as on break"
+			})
+		
+		elif action == "bus_break_in":
+			# Passenger is returning to the bus
+			trip.on_bus_break = False
+			trip.save()
+			return JsonResponse({
+				"status": "valid",
+				"action": "bus_break_in",
+				"message": "Passenger marked as back on bus"
+			})
+		
+		else:
+			# Default validation - just check if trip is valid without modifying it
+			return JsonResponse({
+				"status": "valid",
+				"trip_id": trip.id,
+				"phone_number": trip.phone_number,
+				"destination": trip.destination_name,
+				"on_bus_break": trip.on_bus_break
+			})
+	
 	except Trip.DoesNotExist:
-		return JsonResponse({"status": "invalid"})
+		return JsonResponse({"status": "invalid", "message": "No active trip found"})
 
 
 def active_trips(request):
@@ -461,3 +503,162 @@ def send_qr_email(request):
 			"success": False,
 			"error": f"Internal server error: {str(error)}"
 		}, status=500)
+
+
+# ============================================================
+# SIMULATION API ENDPOINTS
+# ============================================================
+
+@csrf_exempt
+def create_gps_simulation(request):
+	"""
+	Create a GPS simulation session with a path of waypoints.
+	
+	POST data:
+	{
+		"session_id": "simulation-1",
+		"name": "Harare to Bulawayo",
+		"description": "Highway route",
+		"waypoints": [
+			{"lat": -17.8292, "lng": 31.0522, "heading": 180, "speed": 20},
+			{"lat": -17.8300, "lng": 31.0522, "heading": 180, "speed": 20},
+			...
+		]
+	}
+	"""
+	if request.method != "POST":
+		return JsonResponse({"error": "Method not allowed"}, status=405)
+	
+	try:
+		from .models import GPSSimulationSession, GPSSimulationPoint
+		
+		data = json.loads(request.body)
+		session_id = data.get("session_id", f"sim-{uuid.uuid4().hex[:8]}")
+		name = data.get("name", "Unnamed Simulation")
+		description = data.get("description", "")
+		waypoints = data.get("waypoints", [])
+		
+		# Delete existing session with same ID
+		GPSSimulationSession.objects.filter(session_id=session_id).delete()
+		
+		# Create new session
+		session = GPSSimulationSession.objects.create(
+			session_id=session_id,
+			name=name,
+			description=description,
+			current_index=0,
+			is_active=True
+		)
+		
+		# Create waypoints
+		for idx, point in enumerate(waypoints):
+			GPSSimulationPoint.objects.create(
+				session=session,
+				sequence=idx,
+				latitude=point["lat"],
+				longitude=point["lng"],
+				heading=point.get("heading", None),
+				speed=point.get("speed", None),
+				timestamp_offset=point.get("timestamp_offset", idx * 2)
+			)
+		
+		return JsonResponse({
+			"success": True,
+			"session_id": session_id,
+			"waypoint_count": len(waypoints),
+			"deep_link": f"smartbusapp://simulate/gps?session_id={session_id}"
+		})
+	
+	except Exception as error:
+		return JsonResponse({"error": str(error)}, status=400)
+
+
+@csrf_exempt
+def get_next_gps_point(request, session_id):
+	"""
+	Get the next GPS point in a simulation session.
+	Called repeatedly by the app to simulate movement.
+	"""
+	try:
+		from .models import GPSSimulationSession, GPSSimulationPoint
+		
+		session = GPSSimulationSession.objects.get(session_id=session_id)
+		
+		if not session.is_active:
+			return JsonResponse({"completed": True, "message": "Simulation ended"})
+		
+		# Get next point
+		points = list(session.points.all())
+		
+		if session.current_index >= len(points):
+			session.is_active = False
+			session.save()
+			return JsonResponse({"completed": True, "message": "Path completed"})
+		
+		point = points[session.current_index]
+		
+		# Increment index for next call
+		session.current_index += 1
+		session.save()
+		
+		return JsonResponse({
+			"completed": False,
+			"location": {
+				"lat": point.latitude,
+				"lng": point.longitude,
+				"heading": point.heading,
+				"speed": point.speed
+			},
+			"progress": {
+				"current": session.current_index,
+				"total": len(points)
+			}
+		})
+	
+	except GPSSimulationSession.DoesNotExist:
+		return JsonResponse({"error": "Session not found"}, status=404)
+	except Exception as error:
+		return JsonResponse({"error": str(error)}, status=400)
+
+
+@csrf_exempt
+def reset_gps_simulation(request, session_id):
+	"""Reset a simulation back to the beginning"""
+	try:
+		from .models import GPSSimulationSession
+		
+		session = GPSSimulationSession.objects.get(session_id=session_id)
+		session.current_index = 0
+		session.is_active = True
+		session.save()
+		
+		return JsonResponse({"success": True, "message": "Simulation reset"})
+	
+	except GPSSimulationSession.DoesNotExist:
+		return JsonResponse({"error": "Session not found"}, status=404)
+
+
+@csrf_exempt
+def list_simulations(request):
+	"""List all available GPS simulations"""
+	try:
+		from .models import GPSSimulationSession
+		
+		sessions = GPSSimulationSession.objects.all()
+		
+		data = []
+		for session in sessions:
+			data.append({
+				"session_id": session.session_id,
+				"name": session.name,
+				"description": session.description,
+				"waypoint_count": session.points.count(),
+				"current_index": session.current_index,
+				"is_active": session.is_active,
+				"deep_link": f"smartbusapp://simulate/gps?session_id={session.session_id}"
+			})
+		
+		return JsonResponse({"simulations": data})
+	
+	except Exception as error:
+		return JsonResponse({"error": str(error)}, status=400)

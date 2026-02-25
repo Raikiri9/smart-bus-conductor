@@ -1,0 +1,144 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║                    🚌 SMART BUS CONDUCTOR - DEMO CHEAT SHEET                 ║
+║                                                                               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 📋 QUICK START (3 Steps)                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ 1️⃣  Import Node-RED Flows
+     → Open: http://localhost:1880
+     → Menu (☰) → Import → node-red-manual-demo.json
+     → Click RED "Deploy" button
+
+ 2️⃣  Start Expo App
+     → Terminal: cd SmartBusApp
+     → Run: npx expo start
+     → Wait for QR code, scan with Expo Go app
+
+ 3️⃣  Run Demonstration
+     → Follow: MANUAL_DEMONSTRATION_GUIDE.md
+     → Start with Scenario 1: Normal Journey
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🎯 SCENARIO 1: Normal Journey (3 minutes)                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ Step 1: Node-RED → Click "🎬 SCENARIO: Normal Journey"
+         Creates trip with QR: DEMO-NORMAL-001
+
+ Step 2: App → Tap "Choose Destination"
+         → Select "Bulawayo City Centre"
+         → Tap "Confirm"
+
+ Step 3: App → Enter QR: DEMO-NORMAL-001
+         → Tap "Proceed to Pay"
+         → Tap "Confirm Payment"
+
+ Step 4: App → Wait on Confirmation screen (3 seconds)
+         → GPS monitoring starts automatically
+
+ Step 5: Node-RED → Click "📍 Trigger: Approaching Alert"
+         → Alert appears in app: "You are 3.0 km away..."
+
+ Step 6: App → Tap "Disembark" button
+         → Success screen shows
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔘 NODE-RED BUTTONS                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ 🎬 SCENARIO: Normal Journey  → Creates trip (QR: DEMO-NORMAL-001)
+ 📍 Trigger: Approaching Alert → Sets GPS 3km from destination
+ 🚻 Trigger: Bus Break        → Marks passenger on break
+ 🚪 Trigger: Disembark        → Completes journey
+ 📱 Simulate: QR Scan         → Validates trip status
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🌐 IMPORTANT URLS                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ Node-RED:     http://localhost:1880
+ Backend API:  http://localhost:8000/api/trips/
+ Django Admin: http://localhost:8000/admin
+ 
+ From Emulator:
+ Backend API:  http://10.0.2.2:8000/api/trips/
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│ 🛠️  TROUBLESHOOTING                                                           │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+ ❌ Backend not responding:
+    netstat -ano | findstr ":8000"
+    cd backend; python manage.py runserver 0.0.0.0:8000
+
+ ❌ Node-RED flows not working:
+    Check red "Deploy" button → Click it
+    Open debug panel (bug icon on right sidebar)
+
+ ❌ App not connecting:
+    Check SmartBusApp/utils/api.ts has "10.0.2.2:8000"
+    Verify emulator: adb devices
+
+ ❌ GPS alerts not showing:
+    Threshold is 5km (see TripContext.tsx)
+    Must create trip first
+    Wait 3 seconds on Confirmation screen
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 📖 DOCUMENTATION FILES                                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ 📘 MANUAL_DEMONSTRATION_GUIDE.md  → Complete step-by-step guide (3 scenarios)
+ 📙 DEMO_SETUP_SUMMARY.md          → Quick reference & command cheat sheet
+ 📜 THIS FILE                      → Visual quick reference card
+ 🔧 START_DEMO.ps1                 → Automatic service launcher
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ✅ WHAT THIS DEMONSTRATES                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ ✓ Complete passenger journey (selection → payment → monitoring → disembark)
+ ✓ Real-time GPS alerts (5km threshold, shows exact distance)
+ ✓ Payment integration (QR codes, Paynow mock, validation)
+ ✓ Special scenarios (bus breaks, missed stops, offline mode)
+ ✓ Backend automation (Node-RED controls state, app reacts)
+ ✓ Full-stack integration (Django ↔ React Native ↔ Testing tools)
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🎥 PRESENTATION TIPS                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ • Practice Scenario 1 once before presenting
+ • Keep Node-RED debug panel visible (shows backend activity)
+ • Explain hybrid approach: "Node-RED automates backend, I demo UI"
+ • Highlight offline mode (stop backend → queue → restart → sync)
+ • Mention production relevance: "This mirrors real testing strategies"
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 YOU'RE READY!                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Current Status:
+ ✅ Backend running (port 8000)
+ ✅ Node-RED running (port 1880)
+ ✅ Emulator connected (emulator-5554)
+ ✅ Flows created (node-red-manual-demo.json)
+ ✅ Guide written (MANUAL_DEMONSTRATION_GUIDE.md)
+
+Next: Import flows → Start Expo → Follow Scenario 1
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                            Good luck! 🎬

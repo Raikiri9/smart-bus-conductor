@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, Alert, ActivityIndicator } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from "expo-location";
 import { useEffect, useState, useRef } from "react";
@@ -130,12 +130,18 @@ export default function DestinationScreen() {
       };
 
       try {
-        // Try to get current position with timeout
-        const loc = await Location.getCurrentPositionAsync({
+        // Try to get current position with 10 second timeout
+        const locationPromise = Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 5000,
           distanceInterval: 0,
         });
+
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Location timeout')), 10000)
+        );
+
+        const loc = await Promise.race([locationPromise, timeoutPromise]) as any;
         
         await updateLocation({
           latitude: loc.coords.latitude,
@@ -143,22 +149,22 @@ export default function DestinationScreen() {
         });
       } catch (error) {
         console.log('Current location error:', error);
+        
+        // Use default location for Harare, Zimbabwe as fallback (good for emulators)
+        const defaultLocation = {
+          latitude: -17.8292,
+          longitude: 31.0522
+        };
+        
+        console.log('Using default location (Harare, Zimbabwe):', defaultLocation);
+        await updateLocation(defaultLocation);
+        
         Alert.alert(
-          'Location Unavailable', 
-          'Unable to get current location. Please ensure:\n\n' +
-          '1. Location services are enabled on your device\n' +
-          '2. The app has location permissions\n' +
-          '3. GPS signal is available',
-          [
-            { 
-              text: 'Retry', 
-              onPress: () => {
-                // Trigger re-fetch by forcing component remount
-                setCurrentLocation(null);
-              }
-            },
-            { text: 'Cancel' }
-          ]
+          'Using Default Location', 
+          'GPS location unavailable. Using Harare, Zimbabwe as starting point.\n\n' +
+          'For emulators: Set a mock location in the emulator settings.\n' +
+          'For physical devices: Enable location services.',
+          [{ text: 'OK' }]
         );
       }
     })();
@@ -470,7 +476,12 @@ export default function DestinationScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading location...</Text>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Getting your location...</Text>
+          <Text style={styles.loadingSubtext}>
+            This may take a few seconds.{'\n'}
+            {Platform.OS === 'android' ? 'Emulator users: Set mock location in settings.' : ''}
+          </Text>
         </View>
       </View>
     );
@@ -697,6 +708,15 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#94A3B8',
     fontSize: 16,
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  loadingSubtext: {
+    color: '#64748B',
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
   scrollView: {
     flex: 1,

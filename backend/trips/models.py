@@ -59,6 +59,7 @@ class Trip(models.Model):
 	qr_code = models.CharField(max_length=100, unique=True)
 	boarded = models.BooleanField(default=True)
 	completed = models.BooleanField(default=False)
+	on_bus_break = models.BooleanField(default=False)  # True when passenger is temporarily off the bus
 	created_at = models.DateTimeField(auto_now_add=True)
 
 	# Payment fields
@@ -70,3 +71,34 @@ class Trip(models.Model):
 
 	def __str__(self):
 		return f"{self.phone_number} → {self.destination_name}"
+
+
+class GPSSimulationSession(models.Model):
+	"""Stores GPS simulation paths for testing"""
+	session_id = models.CharField(max_length=100, unique=True, primary_key=True)
+	name = models.CharField(max_length=200)
+	description = models.TextField(blank=True)
+	current_index = models.IntegerField(default=0)
+	is_active = models.BooleanField(default=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	def __str__(self):
+		return f"{self.name} ({self.session_id})"
+
+
+class GPSSimulationPoint(models.Model):
+	"""Individual GPS points in a simulation path"""
+	session = models.ForeignKey(GPSSimulationSession, on_delete=models.CASCADE, related_name='points')
+	sequence = models.IntegerField()  # Order in the path
+	latitude = models.FloatField()
+	longitude = models.FloatField()
+	heading = models.FloatField(null=True, blank=True)  # Direction of travel in degrees
+	speed = models.FloatField(null=True, blank=True)  # Speed in m/s
+	timestamp_offset = models.IntegerField(default=0)  # Seconds from start
+
+	class Meta:
+		ordering = ['sequence']
+		unique_together = ['session', 'sequence']
+
+	def __str__(self):
+		return f"{self.session.name} - Point {self.sequence}"
