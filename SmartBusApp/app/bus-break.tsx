@@ -118,13 +118,22 @@ export default function BusBreakScreen() {
 	};
 
 	const handleScan = async (frame: BarcodeScanningResult) => {
-		if (!scanningEnabled || isProcessing || !frame) return;
+		console.log('QR scan detected:', frame);
+		if (!scanningEnabled || isProcessing || !frame) {
+			console.log('Scan ignored - scanningEnabled:', scanningEnabled, 'isProcessing:', isProcessing, 'frame:', !!frame);
+			return;
+		}
 		
 		const data = frame.data;
+		console.log('QR code data:', data);
 		if (typeof data === 'string') {
-			if (lastScannedRef.current === data) return; // Debounce
+			if (lastScannedRef.current === data) {
+				console.log('Duplicate scan ignored');
+				return; // Debounce
+			}
 			lastScannedRef.current = data;
 			const payload = parseQrPayload(data) ?? { ticketId: data, destination: '', origin: '' };
+			console.log('Processing QR payload:', payload);
 			await handleValidScan(payload as any);
 		}
 	};
@@ -140,10 +149,11 @@ export default function BusBreakScreen() {
 
 	const validateOnServer = async (qr: string) => {
 		try {
+			const action = isGoingOut ? 'bus_break_out' : 'bus_break_in';
 			const res = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ qr_code: qr }),
+				body: JSON.stringify({ qr_code: qr, action }),
 			});
 			const data = await res.json();
 			return data?.status === 'valid';
@@ -153,11 +163,13 @@ export default function BusBreakScreen() {
 	};
 
 	const handleResetScanner = () => {
+		console.log('Resetting scanner');
 		setScanningEnabled(true);
 		setValidationType('none');
 		setValidationMessage('');
 		setLastTicket('');
 		setLastPassenger(null);
+		lastScannedRef.current = ''; // Clear debounce
 	};
 
 	return (
@@ -212,31 +224,29 @@ export default function BusBreakScreen() {
 						<CameraView
 							ref={cameraRef}
 							style={styles.barcode}
-							facing="front"
+						facing="front"
+						barcodeScannerSettings={{
+							barcodeTypes: ['qr'],
+						}}
 							onBarcodeScanned={scanningEnabled ? handleScan : undefined}
 						/>
 					)}
-					<View style={styles.scanLine} />
-					<Text style={styles.scannerText}>{scanningEnabled ? scannerLabel : 'Scan completed'}</Text>
-				</View>
+				<Text style={styles.scannerText}>{scanningEnabled ? scannerLabel : 'Scan completed'}</Text>
+			</View>
 
-				{validationType !== 'none' && (
-				<View style={styles.statusBar}>
-					<Text style={[styles.statusText, validationType === 'success' ? styles.statusSuccess : styles.statusError]}>
-						{validationMessage || (validationType === 'success' ? 'Processed successfully.' : 'There was a problem.')}
-					</Text>
-						{lastTicket ? (
-							<Text style={styles.ticketMeta}>{lastPassenger?.origin ?? 'Origin'} → {lastPassenger?.destination ?? 'Destination'} {lastPassenger?.fare ? `• $${lastPassenger.fare}` : ''}</Text>
-						) : null}
-						{outsideTickets.length > 0 ? (
-							<Text style={styles.outsideMeta}>Currently outside: {outsideTickets.length}</Text>
-						) : null}
-					</View>
-				)}
-
-			<Text style={styles.manualLabel}>Or enter QR code manually:</Text>
-			<View style={styles.inputRow}>
-						<Text style={styles.inputLabel}>QR Code</Text>
+			{validationType !== 'none' && (
+			<View style={styles.statusBar}>
+				<Text style={[styles.statusText, validationType === 'success' ? styles.statusSuccess : styles.statusError]}>
+					{validationMessage || (validationType === 'success' ? 'Processed successfully.' : 'There was a problem.')}
+			</Text>
+			{lastTicket ? (
+				<Text style={styles.ticketMeta}>{lastPassenger?.origin ?? 'Origin'} → {lastPassenger?.destination ?? 'Destination'} {lastPassenger?.fare ? `• $${lastPassenger.fare}` : ''}</Text>
+			) : null}
+			{outsideTickets.length > 0 ? (
+				<Text style={styles.outsideMeta}>Currently outside: {outsideTickets.length}</Text>
+			) : null}
+			</View>
+		)}
 						<TextInput
 							style={styles.input}
 							placeholder={inputPlaceholder}
@@ -278,7 +288,6 @@ export default function BusBreakScreen() {
 					<Text style={styles.bullet}>✔</Text>
 					<Text style={styles.bulletText}>You will receive an alert if the bus starts moving without you</Text>
 				</View>
-			</View>
 
 			<View style={styles.tipCard}>
 				<Text style={styles.tipIcon}>💡</Text>
@@ -414,18 +423,6 @@ const styles = StyleSheet.create({
 		left: 0,
 		right: 0,
 		bottom: 0,
-	},
-	scanLine: {
-		position: 'absolute',
-		width: '90%',
-		height: 2,
-		backgroundColor: '#F97316',
-		top: '50%',
-		left: '5%',
-		zIndex: 10,
-	},
-	scanLineIn: {
-		backgroundColor: '#10B981',
 	},
 	scannerText: {
 		position: 'absolute',

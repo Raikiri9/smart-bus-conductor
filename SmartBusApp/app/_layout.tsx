@@ -4,6 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -13,6 +14,9 @@ import { ConnectivityProvider } from '../utils/ConnectivityManager';
 import { SimulationProvider } from '../utils/SimulationContext';
 import { initializeDatabase } from '../utils/offlineDatabase';
 
+// Prevent the splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };
@@ -20,11 +24,27 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
-  // Initialize offline database on app start
+  // Initialize offline database on app start (non-blocking)
   useEffect(() => {
     initializeDatabase().catch(error => {
       console.error('Failed to initialize offline database:', error);
     });
+  }, []);
+
+  // Hide splash screen after UI is fully mounted and ready
+  useEffect(() => {
+    const hideSplash = async () => {
+      try {
+        // Wait 1 second for UI to fully mount and be interactive
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await SplashScreen.hideAsync();
+        console.log('✓ Splash screen hidden - UI ready for interaction');
+      } catch (error) {
+        console.log('Splash screen error:', error);
+      }
+    };
+    
+    hideSplash();
   }, []);
 
   // Runtime presence checks for imports to identify any undefined elements

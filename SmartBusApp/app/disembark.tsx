@@ -74,7 +74,7 @@ export default function DisembarkScreen() {
 			const res = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ qr_code: qr }),
+				body: JSON.stringify({ qr_code: qr, action: 'disembark' }),
 			});
 			const data = await res.json();
 			return data?.status === 'valid';
@@ -84,14 +84,23 @@ export default function DisembarkScreen() {
 	};
 
 	const handleScan = async (frame: BarcodeScanningResult) => {
-		if (!scanningEnabled || isProcessing || !frame) return;
+		console.log('QR scan detected:', frame);
+		if (!scanningEnabled || isProcessing || !frame) {
+			console.log('Scan ignored - scanningEnabled:', scanningEnabled, 'isProcessing:', isProcessing, 'frame:', !!frame);
+			return;
+		}
 		
 		const data = frame.data;
+		console.log('QR code data:', data);
 		if (typeof data === 'string') {
 			// Direct string data from camera
-			if (lastScannedRef.current === data) return; // Debounce
+			if (lastScannedRef.current === data) {
+				console.log('Duplicate scan ignored');
+				return; // Debounce
+			}
 			lastScannedRef.current = data;
 			const payload = parseQrPayload(data) ?? { ticketId: data, destination: '', origin: '' };
+			console.log('Processing QR payload:', payload);
 			await handleValidPassenger(payload as any);
 		}
 	};
@@ -106,11 +115,13 @@ export default function DisembarkScreen() {
 	};
 
 	const handleResetScanner = () => {
+		console.log('Resetting scanner');
 		setScanningEnabled(true);
 		setValidationType('none');
 		setValidationMessage('');
 		setLastTicket('');
 		setLastPassenger(null);
+		lastScannedRef.current = ''; // Clear debounce
 	};
 
 	return (
@@ -138,11 +149,13 @@ export default function DisembarkScreen() {
 				<CameraView
 					ref={cameraRef}
 					style={styles.barcode}
-					facing="front"
+				facing="front"
+				barcodeScannerSettings={{
+					barcodeTypes: ['qr'],
+				}}
 					onBarcodeScanned={scanningEnabled ? handleScan : undefined}
 				/>
 			)}
-			<View style={styles.scanLine} />
 			<Text style={styles.scannerText}>{scanningEnabled ? 'Position QR code within frame' : 'Scan completed'}</Text>
 		</View>
 
@@ -272,15 +285,6 @@ const styles = StyleSheet.create({
 		left: 0,
 		right: 0,
 		bottom: 0,
-	},
-	scanLine: {
-		position: 'absolute',
-		width: '90%',
-		height: 2,
-		backgroundColor: '#EF4444',
-		top: '50%',
-		left: '5%',
-		zIndex: 10,
 	},
 	scannerText: {
 		position: 'absolute',

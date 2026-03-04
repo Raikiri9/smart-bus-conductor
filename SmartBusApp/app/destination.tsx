@@ -10,21 +10,26 @@ import { saveDestination, getDestinations } from '../utils/offlineDatabase';
 // Conditionally load MapView and Marker only on native platforms
 const getNativeMapComponents = () => {
   if (Platform.OS === 'web') {
+    console.log('Platform is web, maps not available');
     return { MapView: null, Marker: null };
   }
   try {
+    console.log('Attempting to load react-native-maps...');
     const ReactNativeMaps = require('react-native-maps');
+    console.log('✓ react-native-maps loaded successfully');
     return {
       MapView: ReactNativeMaps.default,
       Marker: ReactNativeMaps.Marker
     };
   } catch (error) {
-    console.log('Maps not available:', error);
+    console.error('❌ Maps not available:', error);
+    console.error('Error details:', (error as any)?.message);
     return { MapView: null, Marker: null };
   }
 };
 
 const { MapView, Marker } = getNativeMapComponents();
+console.log('MapView component status:', MapView ? 'Available' : 'Not Available');
 
 export default function DestinationScreen() {
   const { startTrip } = useTrip();
@@ -130,15 +135,13 @@ export default function DestinationScreen() {
       };
 
       try {
-        // Try to get current position with 10 second timeout
+        // Try to get current position with 15 second timeout
         const locationPromise = Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
-          timeInterval: 5000,
-          distanceInterval: 0,
         });
 
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Location timeout')), 10000)
+          setTimeout(() => reject(new Error('Location timeout')), 15000)
         );
 
         const loc = await Promise.race([locationPromise, timeoutPromise]) as any;
@@ -212,20 +215,15 @@ export default function DestinationScreen() {
     if (shouldTryOnline) {
       try {
         const encodedQuery = encodeURIComponent(trimmedQuery);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodedQuery}&countrycodes=zw&limit=10`,
           {
             headers: {
               'User-Agent': 'SmartBusApp/1.0'
-            },
-            signal: controller.signal
+            }
           }
         );
-
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
           console.log('Search failed:', response.status);
@@ -598,13 +596,28 @@ export default function DestinationScreen() {
 
         {/* Map */}
         <View style={styles.mapContainer}>
-          {Platform.OS === 'web' || !MapView ? (
+          {Platform.OS === 'web' || !MapView || !currentLocation ? (
             <View style={styles.mapPlaceholder}>
               <Text style={styles.mapPlaceholderText}>🗺️</Text>
               <Text style={styles.mapPlaceholderSubtext}>
-                {Platform.OS === 'web' ? 'Map View (Available on Mobile)' : 'Map Loading...'}
+                {Platform.OS === 'web' 
+                  ? 'Map View (Available on Mobile)' 
+                  : !MapView 
+                  ? 'Map component not loaded' 
+                  : !currentLocation
+                  ? 'Getting your location...'
+                  : 'Loading map...'}
               </Text>
-              <Text style={styles.mapPlaceholderNote}>Use the search box above to find destinations</Text>
+              {currentLocation && (
+                <Text style={styles.mapPlaceholderNote}>
+                  Current: {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
+                </Text>
+              )}
+              <Text style={styles.mapPlaceholderNote}>
+                {!MapView 
+                  ? 'Check console for map loading errors' 
+                  : 'Note: Map tiles require internet connection'}
+              </Text>
             </View>
           ) : (
             <MapView
@@ -621,6 +634,9 @@ export default function DestinationScreen() {
               zoomEnabled={true}
               rotateEnabled={false}
               pitchEnabled={false}
+              loadingEnabled={true}
+              loadingIndicatorColor="#3B82F6"
+              loadingBackgroundColor="#0F172A"
             >
               <Marker 
                 coordinate={currentLocation} 

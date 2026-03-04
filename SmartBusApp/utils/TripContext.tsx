@@ -103,6 +103,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   // Monitor bus location to drive voice alerts for approaching/over-travel and passengers outside during breaks
   useEffect(() => {
+    // Only start location watcher when a trip is actually active
+    if (!journeyActive || !trip) {
+      return;
+    }
+
     let subscription: Location.LocationSubscription | null = null;
     let canceled = false;
 
@@ -112,9 +117,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
       subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 50,
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 10000,
+          distanceInterval: 100,
         },
         async ({ coords }) => {
           if (canceled) return;
@@ -157,7 +162,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       canceled = true;
       subscription?.remove();
     };
-  }, []);
+  }, [journeyActive, trip]);
 
   // Trigger voice alerts when GPS updates
   useEffect(() => {
