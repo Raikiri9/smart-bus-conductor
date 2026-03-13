@@ -65,7 +65,7 @@ Write-Host @"
 1. Import Node-RED Flows:
    - Go to: http://localhost:1880
    - Click menu (☰) → Import
-   - Select: node-red-manual-demo.json
+    - Select: node-red-master-scenario.json
    - Click Deploy
 
 2. Start Expo App:
@@ -75,14 +75,14 @@ Write-Host @"
    - Scan QR with Expo Go app
 
 3. Read Demonstration Guide:
-   - Open: MANUAL_DEMONSTRATION_GUIDE.md
+    - Open: MASTER_SCENARIO_GUIDE.md
    - Follow scenarios step by step
 
 📖 Quick Reference:
    - Node-RED: http://localhost:1880
    - Backend Admin: http://localhost:8000/admin
    - Backend API: http://localhost:8000/api/trips/
-   - Demo Guide: MANUAL_DEMONSTRATION_GUIDE.md
+    - Demo Guide: MASTER_SCENARIO_GUIDE.md
 
 🎬 You're ready to demonstrate!
 

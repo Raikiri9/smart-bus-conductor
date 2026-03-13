@@ -354,10 +354,10 @@ Want to record it? Use **Windows Game Bar**:
 
 After running the master scenario, add GPS movement:
 
-1. Use the GPS simulation from `node-red-simulations.json`
-2. Create journey path with waypoints
-3. Start GPS simulation during "Journey Active" phase
-4. Watch location update on map in real-time!
+1. Use the built-in journey ending options in `node-red-master-scenario.json`
+2. Start the full journey and choose an ending at "Journey Active"
+3. Use **Approaching Destination**, **Missed Destination**, or **Bus Break**
+4. Watch alerts and navigation update in real-time!
 
 ### Add Custom Scenarios
 
