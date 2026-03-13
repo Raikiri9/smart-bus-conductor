@@ -175,6 +175,16 @@ def _simulate_ecocash_payment(payer_phone: str, reference: str, amount: float) -
             'simulated': True,
         }
     
+    if test_result == 'failed':
+        return {
+            'success': False,
+            'error': 'Transaction cancelled by user',
+            'status': 'failed',
+            'reference': reference,
+            'test_mode': True,
+            'simulated': True,
+        }
+    
     # For delayed success scenarios, we would normally implement polling
     # For now, we return success - the actual status would be updated via webhook
     return {
@@ -200,6 +210,16 @@ def _simulate_card_payment(card_token: str, reference: str, amount: float) -> Di
         return {
             'success': False,
             'error': 'Insufficient balance',
+            'status': 'failed',
+            'reference': reference,
+            'test_mode': True,
+            'simulated': True,
+        }
+    
+    if test_result == 'failed':
+        return {
+            'success': False,
+            'error': 'Transaction cancelled by user',
             'status': 'failed',
             'reference': reference,
             'test_mode': True,

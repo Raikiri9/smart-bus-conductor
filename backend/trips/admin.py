@@ -12,7 +12,12 @@ class PassengerTripAdmin(admin.ModelAdmin):
 
 @admin.register(Trip)
 class TripAdmin(admin.ModelAdmin):
-	list_display = ['phone_number', 'destination_name', 'fare', 'distance_km', 'boarded', 'completed', 'created_at']
+	list_display = ['get_origin', 'destination_name', 'fare', 'distance_km', 'boarded', 'completed', 'created_at']
 	list_filter = ['boarded', 'completed', 'created_at']
 	search_fields = ['phone_number', 'destination_name', 'qr_code']
 	readonly_fields = ['created_at']
+	
+	def get_origin(self, obj):
+		"""Display phone number under 'Origin' column header"""
+		return obj.phone_number
+	get_origin.short_description = 'Origin'

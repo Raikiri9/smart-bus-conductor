@@ -35,14 +35,15 @@ def create_trip(request):
 			destination_lng=data["destination_lng"],
 			distance_km=data["distance_km"],
 			fare=data["fare"],
-			qr_code=qr_id
-		)
+		qr_code=qr_id,
+		boarded=True  # Payment completed means passenger is boarding
+	)
 
-		return JsonResponse({
-			"status": "success",
-			"qr_code": qr_id,
-			"trip_id": trip.id
-		})
+	return JsonResponse({
+		"status": "success",
+		"qr_code": qr_id,
+		"trip_id": trip.id
+	})
 
 
 @csrf_exempt
@@ -182,7 +183,8 @@ def initiate_payment(request):
 			try:
 				trip = Trip.objects.get(id=data["trip_id"])
 				trip.payment_method = payment_method
-				trip.payment_status = "processing"
+				# Set status based on actual payment result
+				trip.payment_status = result.get("status", "processing")
 				trip.payer_phone = data.get("payer_phone", phone_number) if payment_method == "ecocash" else None
 				trip.paynow_reference = reference
 				trip.payment_timestamp = timezone.now()
@@ -373,8 +375,6 @@ def send_qr_email(request):
 					<h3>📋 How to Use Your Ticket:</h3>
 					<ol>
 						<li>Keep this email and the QR code below safe</li>
-						<li>Present the QR code to the bus driver when boarding</li>
-						<li>The bus driver will scan your QR code to verify your ticket</li>
 						<li>Keep your ticket throughout your journey</li>
 					</ol>
 				</div>
