@@ -84,7 +84,7 @@ export default function ConfirmationScreen() {
   useEffect(() => {
     const addPassenger = async () => {
       if (!passengerAdded) {
-        await incrementPassengerCount();
+        const updatedCount = await incrementPassengerCount();
         setPassengerAdded(true);
         
         // Play welcome voice alert
@@ -95,6 +95,14 @@ export default function ConfirmationScreen() {
               pitch: 1,
               rate: 0.9,
             });
+
+            if (updatedCount === totalSeats) {
+              await Speech.speak('Attention. Bus occupancy has reached maximum capacity of 60 passengers.', {
+                language: 'en',
+                pitch: 1,
+                rate: 0.9,
+              });
+            }
           } catch (error) {
             console.log('Voice alert error:', error);
           }
@@ -102,7 +110,7 @@ export default function ConfirmationScreen() {
       }
     };
     addPassenger();
-  }, [passengerAdded]);
+  }, [passengerAdded, totalSeats]);
 
   // Auto-redirect after 5 seconds
   useEffect(() => {
