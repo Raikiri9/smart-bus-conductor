@@ -20,6 +20,8 @@ def health_check(request):
 
 @csrf_exempt
 def create_trip(request):
+	global SIMULATION_STATE
+	
 	if request.method == "POST":
 		data = json.loads(request.body)
 
@@ -39,10 +41,16 @@ def create_trip(request):
 		boarded=True  # Payment completed means passenger is boarding
 	)
 
+	# Store passenger's destination in simulation state for alerts
+	# This allows Node-RED simulation buttons to use the real destination
+	SIMULATION_STATE["destination"] = data["destination_name"]
+	print(f"✅ Stored destination in simulation state: {data['destination_name']}")
+
 	return JsonResponse({
 		"status": "success",
 		"qr_code": qr_id,
-		"trip_id": trip.id
+		"trip_id": trip.id,
+		"destination": data["destination_name"]
 	})
 
 
@@ -662,3 +670,73 @@ def list_simulations(request):
 	
 	except Exception as error:
 		return JsonResponse({"error": str(error)}, status=400)
+
+# GLOBAL SIMULATION STATE (Node-RED polling)
+SIMULATION_STATE = {
+	"lat": None,
+	"lng": None,
+	"bus_moving": False,
+	"passengers_outside": 0,
+	"destination": None,  # Passenger's paid destination
+	"approaching_destination": None,  # Alert trigger
+	"missed_destination": None,  # Alert trigger
+	"distance_m": None  # Distance to destination in meters
+}
+
+@csrf_exempt
+def simulate_state(request):
+	"""
+	GET endpoint for Expo app polling.
+	Expo polls this every 2 seconds to get current simulation state.
+	"""
+	global SIMULATION_STATE
+
+	if request.method == "GET":
+		# Expo app polls for simulation state every 2 seconds
+		return JsonResponse(SIMULATION_STATE)
+	
+	return JsonResponse({"error": "Method not allowed"}, status=405)
+
+@csrf_exempt
+def simulate_update(request):
+	"""
+	POST endpoint for Node-RED to update simulation state.
+	Node-RED sends movement/alert data that Expo will receive on next poll.
+	"""
+	global SIMULATION_STATE
+
+	if request.method == "POST":
+		# Node-RED sends updates to change simulation state
+		try:
+			data = json.loads(request.body)
+			
+			# Update simulation state
+			SIMULATION_STATE["lat"] = data.get("lat", SIMULATION_STATE["lat"])
+			SIMULATION_STATE["lng"] = data.get("lng", SIMULATION_STATE["lng"])
+			SIMULATION_STATE["bus_moving"] = data.get("bus_moving", False)
+			SIMULATION_STATE["passengers_outside"] = data.get("passengers_outside", 0)
+			
+			# Handle alert triggers - use destination from simulation state
+			if data.get("approaching_destination"):
+				# Overwrite with data if explicitly sent, otherwise use stored destination
+				SIMULATION_STATE["approaching_destination"] = data.get("approaching_destination")
+			else:
+				SIMULATION_STATE["approaching_destination"] = None
+			
+			if data.get("missed_destination"):
+				SIMULATION_STATE["missed_destination"] = data.get("missed_destination")
+			else:
+				SIMULATION_STATE["missed_destination"] = None
+			
+			SIMULATION_STATE["distance_m"] = data.get("distance_m", SIMULATION_STATE["distance_m"])
+			
+			print(f"✅ Simulation Updated: {SIMULATION_STATE}")
+			
+			return JsonResponse({
+				"status": "simulation updated",
+				"data": SIMULATION_STATE
+			})
+		except json.JSONDecodeError:
+			return JsonResponse({"error": "Invalid JSON"}, status=400)
+	
+	return JsonResponse({"error": "Method not allowed"}, status=405)

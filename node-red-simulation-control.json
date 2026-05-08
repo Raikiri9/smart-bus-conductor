@@ -1,0 +1,165 @@
+[
+  {
+    "id": "sim-inject-bus-movement",
+    "type": "inject",
+    "z": "sim-flow",
+    "name": "🚌 Send Bus Movement Update",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"lat\": -17.8292, \"lng\": 31.0522, \"bus_moving\": true, \"passengers_outside\": 0}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 100,
+    "wires": [
+      [
+        "sim-http-request"
+      ]
+    ]
+  },
+  {
+    "id": "sim-inject-5km",
+    "type": "inject",
+    "z": "sim-flow",
+    "name": "📍 Approaching Destination Alert",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"lat\": -18.90, \"lng\": 29.80, \"bus_moving\": true, \"passengers_outside\": 0, \"approaching_destination\": true, \"distance_m\": 5000}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "sim-http-request"
+      ]
+    ]
+  },
+  {
+    "id": "sim-inject-20km",
+    "type": "inject",
+    "z": "sim-flow",
+    "name": "🚫 Missed Destination Alert",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"lat\": -19.20, \"lng\": 30.10, \"bus_moving\": true, \"passengers_outside\": 0, \"missed_destination\": true}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 220,
+    "wires": [
+      [
+        "sim-http-request"
+      ]
+    ]
+  },
+  {
+    "id": "sim-inject-outside",
+    "type": "inject",
+    "z": "sim-flow",
+    "name": "⚠️ Unaccounted Passenger Alert",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"lat\": -17.85, \"lng\": 31.10, \"bus_moving\": true, \"passengers_outside\": 1}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 280,
+    "wires": [
+      [
+        "sim-http-request"
+      ]
+    ]
+  },
+  {
+    "id": "sim-http-request",
+    "type": "http request",
+    "z": "sim-flow",
+    "name": "POST to Django Simulation",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "http://127.0.0.1:8000/api/trips/simulate/update/",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 400,
+    "y": 180,
+    "wires": [
+      [
+        "sim-debug",
+        "sim-function-log"
+      ]
+    ]
+  },
+  {
+    "id": "sim-debug",
+    "type": "debug",
+    "z": "sim-flow",
+    "name": "🔍 Response from Django",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 650,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "sim-function-log",
+    "type": "function",
+    "z": "sim-flow",
+    "name": "Parse & Log Response",
+    "func": "try {\n  const response = JSON.parse(msg.payload);\n  node.status({fill: \"green\", shape: \"dot\", text: \"✅ Updated\"});\n  return msg;\n} catch(e) {\n  node.status({fill: \"red\", shape: \"dot\", text: \"Error: \" + e.message});\n  return msg;\n}",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 240,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "sim-flow",
+    "type": "tab",
+    "label": "🎮 Smart Bus Simulation Control",
+    "disabled": false,
+    "info": "This flow sends simulation state updates to Django.\n\nClick any inject button to simulate:\n- Bus movement\n- Approaching destination (5km)\n- Missed stop (20km)\n- Passenger outside alert\n\nEach sends data to: POST /api/trips/simulate/update/\n\nExpo app polls this data every 2 seconds via GET /api/trips/simulate/state/"
+  }
+]

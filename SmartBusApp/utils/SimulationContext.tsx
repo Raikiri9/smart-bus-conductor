@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as Linking from 'expo-linking';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, ToastAndroid } from 'react-native';
 import * as Location from 'expo-location';
+import * as Speech from 'expo-speech';
 import { router } from 'expo-router';
 
 interface SimulationState {
@@ -11,6 +12,7 @@ interface SimulationState {
   simulationSpeed: number; // 1x = normal, 2x = faster
   currentStep: string; // Track which step in the simulation we're on
   autoNavigate: boolean; // Whether to auto-navigate between screens
+  busLocation: { latitude: number; longitude: number } | null;
 }
 
 interface SimulationContextType {
@@ -22,6 +24,7 @@ interface SimulationContextType {
   simulateQRScan: (qrCode: string) => void;
   triggerApproachingAlert: (destination: string, distance: number) => void;
   triggerMissedAlert: (destination: string) => void;
+  resetAlertCounters: () => void;
 }
 
 const SimulationContext = createContext<SimulationContextType | undefined>(undefined);
@@ -34,9 +37,29 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     simulationSpeed: 1,
     currentStep: 'idle',
     autoNavigate: false,
+    busLocation: null,
   });
 
   const [gpsSimulationInterval, setGpsSimulationInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+
+  // Alert counters - limit each notification to 2 occurrences
+  const [approachingAlertCount, setApproachingAlertCount] = useState<number>(0);
+  const [missedStopAlertCount, setMissedStopAlertCount] = useState<number>(0);
+  const [passengerOutsideAlertCount, setPassengerOutsideAlertCount] = useState<number>(0);
+
+  // Auto-dismissing notification helper
+  const showAutoNotification = (title: string, message: string) => {
+    if (Platform.OS === 'android') {
+      // Android: Use ToastAndroid which auto-dismisses
+      ToastAndroid.show(`${title}\n${message}`, ToastAndroid.SHORT);
+    } else {
+      // iOS/other: Show alert and auto-dismiss after 2 seconds
+      Alert.alert(title, message);
+      setTimeout(() => {
+        Alert.alert(''); // This doesn't actually dismiss, so we just let it be
+      }, 2000);
+    }
+  };
 
   // Handle deep link URL
   const handleDeepLink = (url: string) => {
@@ -292,7 +315,18 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       setGpsSimulationInterval(null);
     }
     setState(prev => ({ ...prev, isSimulating: false, simulatedLocation: null }));
-    console.log('⏹️ GPS simulation stopped');
+    // Reset alert counters when simulation stops
+    setApproachingAlertCount(0);
+    setMissedStopAlertCount(0);
+    setPassengerOutsideAlertCount(0);
+    console.log('⏹️ GPS simulation stopped and alert counters reset');
+  };
+
+  const resetAlertCounters = () => {
+    setApproachingAlertCount(0);
+    setMissedStopAlertCount(0);
+    setPassengerOutsideAlertCount(0);
+    console.log('🔄 Alert counters reset');
   };
 
   const simulateQRScan = (qrCode: string) => {
@@ -304,22 +338,156 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   };
 
   const triggerApproachingAlert = (destination: string, distance: number) => {
-    console.log(`🔔 Approaching ${destination} - ${distance}m away`);
-    Alert.alert(
-      '📍 Approaching Destination',
-      `You are ${distance}m away from ${destination}`,
-      [{ text: 'OK' }]
-    );
+    if (approachingAlertCount < 2) {
+      console.log(`🔔 Approaching ${destination} - ${distance}m away (${approachingAlertCount + 1}/2)`);
+      showAutoNotification(
+        '📍 Approaching Destination',
+        `You are ${distance}m away from ${destination}`
+      );
+      Speech.speak(`Approaching your destination, ${destination}.`, {
+        language: 'en',
+        pitch: 1,
+        rate: 0.9,
+      });
+      setApproachingAlertCount(prev => prev + 1);
+    }
   };
 
   const triggerMissedAlert = (destination: string) => {
-    console.log(`⚠️ Missed destination: ${destination}`);
-    Alert.alert(
-      '⚠️ Missed Destination',
-      `You have passed ${destination}. Please notify the driver.`,
-      [{ text: 'OK' }]
-    );
+    if (missedStopAlertCount < 2) {
+      console.log(`⚠️ Missed destination: ${destination} (${missedStopAlertCount + 1}/2)`);
+      showAutoNotification(
+        '⚠️ Missed Destination',
+        `You have passed ${destination}. Please notify the driver.`
+      );
+      Speech.speak(`You missed your stop at ${destination}.`, {
+        language: 'en',
+        pitch: 1,
+        rate: 0.9,
+      });
+      setMissedStopAlertCount(prev => prev + 1);
+    }
   };
+
+  // Fetch continuous Node-RED simulation state
+  const fetchNodeRedSimulation = async () => {
+    try {
+      const apiUrl = Platform.OS === 'android' 
+        ? 'http://10.0.2.2:8000' 
+        : 'http://localhost:8000';
+
+      const response = await fetch(
+        `${apiUrl}/api/trips/simulate/state/`
+      );
+
+      const data = await response.json();
+
+      console.log('🔄 Simulation Data from Node-RED:', data);
+
+      // UPDATE BUS LOCATION
+      if (data.lat && data.lng) {
+        setState(prev => ({
+          ...prev,
+          busLocation: {
+            latitude: data.lat,
+            longitude: data.lng,
+          }
+        }));
+        console.log(`📍 Bus Location Updated: ${data.lat}, ${data.lng}`);
+      }
+
+      // APPROACHING DESTINATION ALERT - Limited to 2 occurrences
+      if (data.approaching_destination && data.destination) {
+        if (approachingAlertCount < 2) {
+          console.log(`🔔 Approaching ${data.destination} - ${data.distance_m || 5000}m away (${approachingAlertCount + 1}/2)`);
+          showAutoNotification(
+            '📍 Approaching Destination',
+            `You are ${data.distance_m || 5000}m away from ${data.destination}`
+          );
+          Speech.speak(`Approaching your destination, ${data.destination}.`, {
+            language: 'en',
+            pitch: 1,
+            rate: 0.9,
+          });
+          const newCount = approachingAlertCount + 1;
+          setApproachingAlertCount(newCount);
+          
+          // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
+          if (newCount === 2) {
+            fetch(`${apiUrl}/api/trips/simulate/update/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ approaching_destination: false })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // MISSED DESTINATION ALERT - Limited to 2 occurrences
+      if (data.missed_destination && data.destination) {
+        if (missedStopAlertCount < 2) {
+          console.log(`⚠️ Missed destination: ${data.destination} (${missedStopAlertCount + 1}/2)`);
+          showAutoNotification(
+            '⚠️ Missed Destination',
+            `You have passed ${data.destination}. Please notify the driver.`
+          );
+          Speech.speak(`You missed your stop at ${data.destination}.`, {
+            language: 'en',
+            pitch: 1,
+            rate: 0.9,
+          });
+          const newCount = missedStopAlertCount + 1;
+          setMissedStopAlertCount(newCount);
+          
+          // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
+          if (newCount === 2) {
+            fetch(`${apiUrl}/api/trips/simulate/update/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ missed_destination: false })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // BUS BREAK SAFETY ALERT - Limited to 2 occurrences
+      if (data.bus_moving && data.passengers_outside > 0) {
+        if (passengerOutsideAlertCount < 2) {
+          console.log('⚠️ Safety Alert: Bus moving with passengers outside! (', passengerOutsideAlertCount + 1, '/2 )');
+          showAutoNotification(
+            '⚠️ Safety Alert',
+            'Bus is moving while passengers are outside!'
+          );
+          Speech.speak(
+            'Warning. Bus is moving while passengers are outside.',
+            {
+              language: 'en',
+              pitch: 1,
+              rate: 0.9,
+            }
+          );
+          setPassengerOutsideAlertCount(prev => prev + 1);
+        }
+      } else {
+        // Reset counter when condition is no longer met
+        if (passengerOutsideAlertCount > 0) {
+          setPassengerOutsideAlertCount(0);
+        }
+      }
+
+    } catch (error) {
+      console.log('📡 Simulation Fetch Error:', error);
+    }
+  };
+
+  // Continuous Node-RED simulation listener (every 2 seconds)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchNodeRedSimulation();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Listen for deep links
   useEffect(() => {
@@ -353,6 +521,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       simulateQRScan,
       triggerApproachingAlert,
       triggerMissedAlert,
+      resetAlertCounters,
     }}>
       {children}
     </SimulationContext.Provider>

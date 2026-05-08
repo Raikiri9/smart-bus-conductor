@@ -13,6 +13,8 @@ from .views import (
     get_next_gps_point,
     reset_gps_simulation,
     list_simulations,
+    simulate_state,
+    simulate_update,
 )
 
 urlpatterns = [
@@ -26,6 +28,8 @@ urlpatterns = [
     path('send-qr-email/', send_qr_email),
     
     # Simulation endpoints
+    path('simulate/state/', simulate_state),
+    path('simulate/update/', simulate_update),
     path('simulate/gps/create/', create_gps_simulation),
     path('simulate/gps/next/<str:session_id>/', get_next_gps_point),
     path('simulate/gps/reset/<str:session_id>/', reset_gps_simulation),

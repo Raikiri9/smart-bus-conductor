@@ -1,0 +1,896 @@
+[
+  {
+    "id": "tab_voice_tests",
+    "type": "tab",
+    "label": "Voice Alert Tests (Android Emulator)",
+    "disabled": false,
+    "info": "Scenario-focused flow for 5km approaching voice, 20km missed-stop voice, and moving-while-outside voice"
+  },
+  {
+    "id": "comment_voice_header",
+    "type": "comment",
+    "z": "tab_voice_tests",
+    "name": "1) Create trip, 2) Open app screens, 3) Trigger GPS/location steps",
+    "info": "",
+    "x": 310,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "inject_create_trip",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "STEP 1: Create Demo Trip",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 150,
+    "y": 100,
+    "wires": [
+      [
+        "func_prepare_trip"
+      ]
+    ]
+  },
+  {
+    "id": "func_prepare_trip",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Prepare Trip Payload",
+    "func": "const ts = Date.now();\nconst qrCode = `BUS-${ts}-VOICE`;\n\nflow.set('voiceQrCode', qrCode);\nflow.set('destinationName', 'Harare CBD');\nflow.set('destinationLat', -17.8252);\nflow.set('destinationLng', 31.0335);\n\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n  phone_number: '+263771234567',\n  origin_lat: -17.8292,\n  origin_lng: 31.0522,\n  destination_name: 'Harare CBD',\n  destination_lat: -17.8252,\n  destination_lng: 31.0335,\n  distance_km: 5.2,\n  fare: 1.0,\n  qr_code: qrCode\n};\n\nnode.warn(`Created QR for demo: ${qrCode}`);\nreturn msg;",
+    "outputs": 1,
+    "x": 400,
+    "y": 100,
+    "wires": [
+      [
+        "http_create_trip"
+      ]
+    ]
+  },
+  {
+    "id": "http_create_trip",
+    "type": "http request",
+    "z": "tab_voice_tests",
+    "name": "POST /api/trips/create",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "http://localhost:8000/api/trips/create/",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 100,
+    "wires": [
+      [
+        "func_trip_created"
+      ]
+    ]
+  },
+  {
+    "id": "func_trip_created",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Trip Created Summary",
+    "func": "const qrCode = flow.get('voiceQrCode');\nconst ok = msg.payload && msg.payload.status === 'success';\n\nif (ok) {\n  node.status({ fill: 'green', shape: 'dot', text: 'Trip created' });\n  node.warn(`Trip ready. Use this QR in app: ${qrCode}`);\n} else {\n  node.status({ fill: 'red', shape: 'ring', text: 'Create failed' });\n  node.warn('Trip creation failed. Check backend.');\n}\n\nmsg.payload = {\n  status: ok ? 'ready' : 'error',\n  qr_code: qrCode,\n  destination: flow.get('destinationName'),\n  destination_coords: {\n    lat: flow.get('destinationLat'),\n    lng: flow.get('destinationLng')\n  },\n  note: 'Use this QR on payment and bus-break screens in emulator'\n};\n\nreturn msg;",
+    "outputs": 1,
+    "x": 900,
+    "y": 100,
+    "wires": [
+      [
+        "debug_trip"
+      ]
+    ]
+  },
+  {
+    "id": "debug_trip",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "Trip/QR Details",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "x": 1120,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "inject_open_confirmation",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "STEP 2: Open Confirmation Screen",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 180,
+    "y": 170,
+    "wires": [
+      [
+        "func_open_confirmation"
+      ]
+    ]
+  },
+  {
+    "id": "func_open_confirmation",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Navigate Confirmation",
+    "func": "const deepLink = 'smartbusapp://navigate?screen=confirmation';\nmsg.payload = `adb shell am start -a android.intent.action.VIEW -d \"${deepLink}\"`;\nnode.warn('Opening confirmation screen in emulator');\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 170,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "inject_open_bus_break",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "STEP 3: Open Bus-Break Screen",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 170,
+    "y": 230,
+    "wires": [
+      [
+        "func_open_break"
+      ]
+    ]
+  },
+  {
+    "id": "func_open_break",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Navigate Bus-Break",
+    "func": "const deepLink = 'smartbusapp://navigate?screen=bus-break';\nmsg.payload = `adb shell am start -a android.intent.action.VIEW -d \"${deepLink}\"`;\nnode.warn('Opening bus-break screen in emulator');\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 230,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "comment_scenario_a",
+    "type": "comment",
+    "z": "tab_voice_tests",
+    "name": "Scenario A: Approaching voice at ~5km",
+    "info": "",
+    "x": 180,
+    "y": 310,
+    "wires": []
+  },
+  {
+    "id": "inject_gps_5km",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "A1: Set GPS ~5km from destination",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 190,
+    "y": 350,
+    "wires": [
+      [
+        "func_gps_5km"
+      ]
+    ]
+  },
+  {
+    "id": "func_gps_5km",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Emulator Geo Fix (5km)",
+    "func": "msg.payload = 'adb emu geo fix 31.0335 -17.8700';\nnode.warn('GPS moved near destination (~5km). Approaching voice should play if trip is active.');\nreturn msg;",
+    "outputs": 1,
+    "x": 470,
+    "y": 350,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "comment_scenario_b",
+    "type": "comment",
+    "z": "tab_voice_tests",
+    "name": "Scenario B: Missed stop voice at >=20km (run A1 first)",
+    "info": "",
+    "x": 210,
+    "y": 420,
+    "wires": []
+  },
+  {
+    "id": "inject_gps_20km",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "B1: Set GPS ~20km away (missed stop)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 190,
+    "y": 460,
+    "wires": [
+      [
+        "func_gps_20km"
+      ]
+    ]
+  },
+  {
+    "id": "func_gps_20km",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Emulator Geo Fix (20km)",
+    "func": "msg.payload = 'adb emu geo fix 31.0335 -18.0052';\nnode.warn('GPS moved far from destination (~20km). Missed-stop voice should play after approaching alert has happened.');\nreturn msg;",
+    "outputs": 1,
+    "x": 470,
+    "y": 460,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "comment_scenario_c",
+    "type": "comment",
+    "z": "tab_voice_tests",
+    "name": "Scenario C: Bus moving while passenger still outside",
+    "info": "",
+    "x": 200,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "inject_validate_out",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "C0 (Optional): Backend mark bus_break_out",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 190,
+    "y": 580,
+    "wires": [
+      [
+        "func_prepare_break_out"
+      ]
+    ]
+  },
+  {
+    "id": "func_prepare_break_out",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Prepare bus_break_out API call",
+    "func": "const qrCode = flow.get('voiceQrCode');\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { qr_code: qrCode, action: 'bus_break_out' };\nreturn msg;",
+    "outputs": 1,
+    "x": 490,
+    "y": 580,
+    "wires": [
+      [
+        "http_validate"
+      ]
+    ]
+  },
+  {
+    "id": "inject_gps_baseline",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "C1: Set baseline GPS",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 150,
+    "y": 640,
+    "wires": [
+      [
+        "func_gps_baseline"
+      ]
+    ]
+  },
+  {
+    "id": "func_gps_baseline",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Baseline Location",
+    "func": "msg.payload = 'adb emu geo fix 31.0400 -17.8600';\nnode.warn('Baseline location set.');\nreturn msg;",
+    "outputs": 1,
+    "x": 420,
+    "y": 640,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "inject_gps_move_outside",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "C2: Move bus >0.3km",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 140,
+    "y": 700,
+    "wires": [
+      [
+        "func_gps_move_outside"
+      ]
+    ]
+  },
+  {
+    "id": "func_gps_move_outside",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "ADB: Move to trigger outside alert",
+    "func": "msg.payload = 'adb emu geo fix 31.0465 -17.8600';\nnode.warn('Bus moved >0.3km. If passenger is marked outside in app, moving-while-outside voice should play.');\nreturn msg;",
+    "outputs": 1,
+    "x": 450,
+    "y": 700,
+    "wires": [
+      [
+        "exec_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "inject_validate_in",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "C3 (Cleanup): Backend mark bus_break_in",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 190,
+    "y": 760,
+    "wires": [
+      [
+        "func_prepare_break_in"
+      ]
+    ]
+  },
+  {
+    "id": "func_prepare_break_in",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Prepare bus_break_in API call",
+    "func": "const qrCode = flow.get('voiceQrCode');\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { qr_code: qrCode, action: 'bus_break_in' };\nreturn msg;",
+    "outputs": 1,
+    "x": 480,
+    "y": 760,
+    "wires": [
+      [
+        "http_validate"
+      ]
+    ]
+  },
+  {
+    "id": "http_validate",
+    "type": "http request",
+    "z": "tab_voice_tests",
+    "name": "POST /api/trips/validate",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "http://localhost:8000/api/trips/validate/",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 740,
+    "y": 670,
+    "wires": [
+      [
+        "debug_validate"
+      ]
+    ]
+  },
+  {
+    "id": "debug_validate",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "Validate Response",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "x": 970,
+    "y": 670,
+    "wires": []
+  },
+  {
+    "id": "exec_cmd",
+    "type": "exec",
+    "z": "tab_voice_tests",
+    "command": "cmd /c",
+    "addpay": "payload",
+    "append": "",
+    "useSpawn": "false",
+    "timer": "",
+    "winHide": true,
+    "oldrc": false,
+    "name": "Run ADB Command",
+    "x": 730,
+    "y": 280,
+    "wires": [
+      [
+        "debug_exec"
+      ],
+      [
+        "debug_exec_err"
+      ],
+      [
+        "debug_exec_rc"
+      ]
+    ]
+  },
+  {
+    "id": "debug_exec",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "ADB stdout",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "x": 960,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "debug_exec_err",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "ADB stderr",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "x": 960,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "debug_exec_rc",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "ADB return code",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "x": 970,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "comment_single_click",
+    "type": "comment",
+    "z": "tab_voice_tests",
+    "name": "Single-Click Demo: Timed stages for presentation",
+    "info": "",
+    "x": 260,
+    "y": 840,
+    "wires": []
+  },
+  {
+    "id": "inject_single_click_demo",
+    "type": "inject",
+    "z": "tab_voice_tests",
+    "name": "START SINGLE-CLICK TIMED DEMO",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "topic": "",
+    "x": 180,
+    "y": 900,
+    "wires": [
+      [
+        "func_single_click_start"
+      ]
+    ]
+  },
+  {
+    "id": "func_single_click_start",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Orchestrate Timed Stages",
+    "func": "node.warn('\\n=== SINGLE-CLICK TIMED DEMO START ===');\nnode.warn('Keep Android emulator visible and unlocked.');\nnode.warn('Flow will run: create trip -> 5km alert -> 20km alert -> bus-break movement alert.\\n');\n\nmsg.payload = {\n  mode: 'single_click_demo',\n  started_at: new Date().toISOString()\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 430,
+    "y": 900,
+    "wires": [
+      [
+        "debug_single_click_status",
+        "delay_sc_create_trip",
+        "delay_sc_open_confirmation",
+        "delay_sc_approach_5km",
+        "delay_sc_missed_20km",
+        "delay_sc_open_break",
+        "delay_sc_mark_out",
+        "delay_sc_manual_prompt",
+        "delay_sc_baseline",
+        "delay_sc_move",
+        "delay_sc_cleanup_in",
+        "delay_sc_complete"
+      ]
+    ]
+  },
+  {
+    "id": "debug_single_click_status",
+    "type": "debug",
+    "z": "tab_voice_tests",
+    "name": "Single-Click Status",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "x": 720,
+    "y": 900,
+    "wires": []
+  },
+  {
+    "id": "delay_sc_create_trip",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+1s Create Trip",
+    "pauseType": "delay",
+    "timeout": "1",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 170,
+    "y": 960,
+    "wires": [
+      [
+        "func_prepare_trip"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_open_confirmation",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+8s Open Confirmation",
+    "pauseType": "delay",
+    "timeout": "8",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 410,
+    "y": 960,
+    "wires": [
+      [
+        "func_open_confirmation"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_approach_5km",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+18s Trigger 5km",
+    "pauseType": "delay",
+    "timeout": "18",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 640,
+    "y": 960,
+    "wires": [
+      [
+        "func_gps_5km"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_missed_20km",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+30s Trigger 20km",
+    "pauseType": "delay",
+    "timeout": "30",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 870,
+    "y": 960,
+    "wires": [
+      [
+        "func_gps_20km"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_open_break",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+40s Open Bus-Break",
+    "pauseType": "delay",
+    "timeout": "40",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 180,
+    "y": 1020,
+    "wires": [
+      [
+        "func_open_break"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_mark_out",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+45s backend bus_break_out",
+    "pauseType": "delay",
+    "timeout": "45",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 430,
+    "y": 1020,
+    "wires": [
+      [
+        "func_prepare_break_out"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_manual_prompt",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+50s show manual prompt",
+    "pauseType": "delay",
+    "timeout": "50",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 670,
+    "y": 1020,
+    "wires": [
+      [
+        "func_sc_manual_prompt"
+      ]
+    ]
+  },
+  {
+    "id": "func_sc_manual_prompt",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Prompt: scan Confirm Exit in app",
+    "func": "node.warn('Manual action now: On emulator Bus-Break screen, tap Confirm Exit with the current QR.');\nmsg.payload = { stage: 'manual_exit_required', note: 'Tap Confirm Exit in app now' };\nreturn msg;",
+    "outputs": 1,
+    "x": 930,
+    "y": 1020,
+    "wires": [
+      [
+        "debug_single_click_status"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_baseline",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+58s baseline GPS",
+    "pauseType": "delay",
+    "timeout": "58",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 180,
+    "y": 1080,
+    "wires": [
+      [
+        "func_gps_baseline"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_move",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+66s move >0.3km",
+    "pauseType": "delay",
+    "timeout": "66",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 400,
+    "y": 1080,
+    "wires": [
+      [
+        "func_gps_move_outside"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_cleanup_in",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+74s backend bus_break_in",
+    "pauseType": "delay",
+    "timeout": "74",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 650,
+    "y": 1080,
+    "wires": [
+      [
+        "func_prepare_break_in"
+      ]
+    ]
+  },
+  {
+    "id": "delay_sc_complete",
+    "type": "delay",
+    "z": "tab_voice_tests",
+    "name": "T+78s final status",
+    "pauseType": "delay",
+    "timeout": "78",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "x": 880,
+    "y": 1080,
+    "wires": [
+      [
+        "func_sc_complete"
+      ]
+    ]
+  },
+  {
+    "id": "func_sc_complete",
+    "type": "function",
+    "z": "tab_voice_tests",
+    "name": "Single-Click Demo Complete",
+    "func": "node.warn('\\n=== SINGLE-CLICK TIMED DEMO COMPLETE ===');\nmsg.payload = {\n  status: 'complete',\n  sequence: '5km approaching -> 20km missed -> moving while outside',\n  note: 'If outside-moving voice did not play, repeat with faster Confirm Exit action on emulator.'\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 1130,
+    "y": 1080,
+    "wires": [
+      [
+        "debug_single_click_status"
+      ]
+    ]
+  }
+]
