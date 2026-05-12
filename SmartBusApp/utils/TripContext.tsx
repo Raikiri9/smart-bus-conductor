@@ -145,10 +145,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             );
 
             if (movedKm >= 0.3 && !movingAlertRef.current && Platform.OS !== 'web') {
-              Speech.speak(
-                'Alert: the bus is moving while registered passengers are still outside. Please ensure everyone is onboard.',
-                { rate: 0.95, pitch: 1 }
-              );
+              Speech.stop().catch(() => {});
+              setTimeout(() => {
+                Speech.speak(
+                  'Alert: the bus is moving while registered passengers are still outside. Please ensure everyone is onboard.',
+                  { language: 'en', rate: 1.0, pitch: 1.0 }
+                );
+              }, 100);
               movingAlertRef.current = true;
             }
           }
@@ -202,7 +205,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             : `${distanceKm.toFixed(1)} kilometers`;
           
           Speech.stop().catch(() => {});
-          Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`);
+          setTimeout(() => {
+            Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`, {
+              language: 'en',
+              pitch: 1.0,
+              rate: 1.0
+            });
+          }, 100);
           
           // Also show visual alert with distance
           Alert.alert(
@@ -225,7 +234,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             : `${distanceKm.toFixed(1)} kilometers`;
           
           Speech.stop().catch(() => {});
-          Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`);
+          setTimeout(() => {
+            Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`, {
+              language: 'en',
+              pitch: 1.0,
+              rate: 1.0
+            });
+          }, 100);
           
           // Visual alert for missed destination
           Alert.alert(

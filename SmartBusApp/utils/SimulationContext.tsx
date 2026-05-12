@@ -83,27 +83,30 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       await Speech.stop().catch(() => {});
       
       return new Promise<void>((resolve) => {
-        Speech.speak(message, {
-          language: 'en',
-          pitch: 1,
-          rate: 0.9,
-          onStart: () => {
-            console.log(`📣 ${type} started`);
-          },
-          onDone: () => {
-            console.log(`✅ ${type} finished`);
-            isSpeakingRef.current = false;
-            resolve();
-            // Small delay, then process next
-            setTimeout(() => processNextSpeech(), 300);
-          },
-          onError: (error) => {
-            console.error(`❌ ${type} error:`, error);
-            isSpeakingRef.current = false;
-            resolve();
-            setTimeout(() => processNextSpeech(), 300);
-          },
-        });
+        // Small delay after stop to ensure clean start
+        setTimeout(() => {
+          Speech.speak(message, {
+            language: 'en',
+            pitch: 1.0,
+            rate: 1.0,
+            onStart: () => {
+              console.log(`📣 ${type} started`);
+            },
+            onDone: () => {
+              console.log(`✅ ${type} finished`);
+              isSpeakingRef.current = false;
+              resolve();
+              // Small delay, then process next
+              setTimeout(() => processNextSpeech(), 300);
+            },
+            onError: (error) => {
+              console.error(`❌ ${type} error:`, error);
+              isSpeakingRef.current = false;
+              resolve();
+              setTimeout(() => processNextSpeech(), 300);
+            },
+          });
+        }, 150);
       });
     } else {
       isSpeakingRef.current = false;

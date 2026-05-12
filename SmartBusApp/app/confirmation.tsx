@@ -92,6 +92,9 @@ export default function ConfirmationScreen() {
           try {
             // Stop any existing speech first to avoid conflicts
             await Speech.stop();
+            
+            // Add delay to ensure clean stop before speaking
+            await new Promise(resolve => setTimeout(resolve, 150));
             console.log('✅ Playing payment confirmation voice alert');
             
             // Wrap Speech.speak in a promise with timeout to prevent hanging
@@ -106,7 +109,7 @@ export default function ConfirmationScreen() {
 
             await speakWithTimeout(
               'Welcome to Smart Bus Conductor. Your payment has been confirmed. Please keep your QR code ready for scanning during the journey.',
-              { language: 'en', pitch: 1, rate: 0.9 }
+              { language: 'en', pitch: 1.0, rate: 1.0 }
             );
 
             if (updatedCount === totalSeats) {
@@ -114,7 +117,7 @@ export default function ConfirmationScreen() {
               await new Promise(resolve => setTimeout(resolve, 500));
               await speakWithTimeout(
                 'Attention. Bus occupancy has reached maximum capacity of 60 passengers.',
-                { language: 'en', pitch: 1, rate: 0.9 }
+                { language: 'en', pitch: 1.0, rate: 1.0 }
               );
             }
           } catch (error) {
