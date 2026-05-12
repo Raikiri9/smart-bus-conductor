@@ -90,21 +90,35 @@ export default function ConfirmationScreen() {
         // Play welcome voice alert
         if (Platform.OS !== 'web') {
           try {
-            await Speech.speak('Welcome to Smart Bus Conductor. Your payment has been confirmed. Please keep your QR code ready for scanning during the journey.', {
-              language: 'en',
-              pitch: 1,
-              rate: 0.9,
-            });
+            // Stop any existing speech first to avoid conflicts
+            await Speech.stop();
+            console.log('✅ Playing payment confirmation voice alert');
+            
+            // Wrap Speech.speak in a promise with timeout to prevent hanging
+            const speakWithTimeout = (text: string, options: any, timeoutMs: number = 10000) => {
+              return Promise.race([
+                Speech.speak(text, options),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Speech timeout')), timeoutMs)
+                )
+              ]);
+            };
+
+            await speakWithTimeout(
+              'Welcome to Smart Bus Conductor. Your payment has been confirmed. Please keep your QR code ready for scanning during the journey.',
+              { language: 'en', pitch: 1, rate: 0.9 }
+            );
 
             if (updatedCount === totalSeats) {
-              await Speech.speak('Attention. Bus occupancy has reached maximum capacity of 60 passengers.', {
-                language: 'en',
-                pitch: 1,
-                rate: 0.9,
-              });
+              // Small delay before second alert
+              await new Promise(resolve => setTimeout(resolve, 500));
+              await speakWithTimeout(
+                'Attention. Bus occupancy has reached maximum capacity of 60 passengers.',
+                { language: 'en', pitch: 1, rate: 0.9 }
+              );
             }
           } catch (error) {
-            console.log('Voice alert error:', error);
+            console.log('❌ Voice alert error:', error);
           }
         }
       }

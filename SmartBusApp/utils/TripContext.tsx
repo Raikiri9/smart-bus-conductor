@@ -201,6 +201,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             ? `${Math.round(distanceKm * 1000)} meters` 
             : `${distanceKm.toFixed(1)} kilometers`;
           
+          Speech.stop().catch(() => {});
           Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`);
           
           // Also show visual alert with distance
@@ -223,6 +224,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             ? `${Math.round(distanceKm * 1000)} meters` 
             : `${distanceKm.toFixed(1)} kilometers`;
           
+          Speech.stop().catch(() => {});
           Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`);
           
           // Visual alert for missed destination

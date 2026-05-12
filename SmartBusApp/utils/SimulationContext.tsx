@@ -47,6 +47,70 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [missedStopAlertCount, setMissedStopAlertCount] = useState<number>(0);
   const [passengerOutsideAlertCount, setPassengerOutsideAlertCount] = useState<number>(0);
 
+  // Alert exclusivity - only one alert type plays at a time
+  // Priority order: approaching → missed → safety
+  const [activeAlertType, setActiveAlertType] = useState<'approaching' | 'missed' | 'safety' | null>(null);
+
+  // Speech queue system - ensures alerts play sequentially, not overlapping
+  const speechQueueRef = React.useRef<Array<{ message: string; type: string }>>([]);
+  const isSpeakingRef = React.useRef<boolean>(false);
+
+  const playSpeechSequentially = (message: string, type: string) => {
+    speechQueueRef.current.push({ message, type });
+    console.log(`📢 ${type} queued: "${message}" (Queue: ${speechQueueRef.current.length})`);
+    processNextSpeech();
+  };
+
+  const processNextSpeech = async () => {
+    // If already speaking, wait
+    if (isSpeakingRef.current) {
+      console.log('🔊 Speech in progress, waiting...');
+      return;
+    }
+
+    // If queue empty, stop
+    if (speechQueueRef.current.length === 0) {
+      console.log('✅ Speech queue empty');
+      return;
+    }
+
+    const { message, type } = speechQueueRef.current.shift()!;
+    isSpeakingRef.current = true;
+
+    console.log(`🎤 ${type} playing: "${message}" (${speechQueueRef.current.length} remaining)`);
+
+    if (Platform.OS !== 'web') {
+      await Speech.stop().catch(() => {});
+      
+      return new Promise<void>((resolve) => {
+        Speech.speak(message, {
+          language: 'en',
+          pitch: 1,
+          rate: 0.9,
+          onStart: () => {
+            console.log(`📣 ${type} started`);
+          },
+          onDone: () => {
+            console.log(`✅ ${type} finished`);
+            isSpeakingRef.current = false;
+            resolve();
+            // Small delay, then process next
+            setTimeout(() => processNextSpeech(), 300);
+          },
+          onError: (error) => {
+            console.error(`❌ ${type} error:`, error);
+            isSpeakingRef.current = false;
+            resolve();
+            setTimeout(() => processNextSpeech(), 300);
+          },
+        });
+      });
+    } else {
+      isSpeakingRef.current = false;
+      setTimeout(() => processNextSpeech(), 300);
+    }
+  };
+
   // Auto-dismissing notification helper
   const showAutoNotification = (title: string, message: string) => {
     if (Platform.OS === 'android') {
@@ -201,6 +265,11 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     const type = params?.type || 'full';
     
     console.log('🎬 Starting Master Scenario:', type);
+    // Reset alert counters for new scenario
+    setApproachingAlertCount(0);
+    setMissedStopAlertCount(0);
+    setPassengerOutsideAlertCount(0);
+    setActiveAlertType(null);
     setState(prev => ({ ...prev, isSimulating: true, autoNavigate: true, currentStep: 'start' }));
 
     // Different scenario types
@@ -319,6 +388,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setApproachingAlertCount(0);
     setMissedStopAlertCount(0);
     setPassengerOutsideAlertCount(0);
+    setActiveAlertType(null);
     console.log('⏹️ GPS simulation stopped and alert counters reset');
   };
 
@@ -326,7 +396,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setApproachingAlertCount(0);
     setMissedStopAlertCount(0);
     setPassengerOutsideAlertCount(0);
-    console.log('🔄 Alert counters reset');
+    setActiveAlertType(null);
+    console.log('🔄 Alert counters and active alert type reset');
   };
 
   const simulateQRScan = (qrCode: string) => {
@@ -344,11 +415,14 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         '📍 Approaching Destination',
         `You are ${distance}m away from ${destination}`
       );
-      Speech.speak(`Approaching your destination, ${destination}.`, {
-        language: 'en',
-        pitch: 1,
-        rate: 0.9,
-      });
+      if (Platform.OS !== 'web') {
+        Speech.stop().catch(() => {});
+        Speech.speak(`Approaching your destination, ${destination}.`, {
+          language: 'en',
+          pitch: 1,
+          rate: 0.9,
+        });
+      }
       setApproachingAlertCount(prev => prev + 1);
     }
   };
@@ -360,11 +434,14 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         '⚠️ Missed Destination',
         `You have passed ${destination}. Please notify the driver.`
       );
-      Speech.speak(`You missed your stop at ${destination}.`, {
-        language: 'en',
-        pitch: 1,
-        rate: 0.9,
-      });
+      if (Platform.OS !== 'web') {
+        Speech.stop().catch(() => {});
+        Speech.speak(`You missed your stop at ${destination}.`, {
+          language: 'en',
+          pitch: 1,
+          rate: 0.9,
+        });
+      }
       setMissedStopAlertCount(prev => prev + 1);
     }
   };
@@ -383,6 +460,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       console.log('🔄 Simulation Data from Node-RED:', data);
+      console.log('🔀 Active Alert Type:', activeAlertType);
 
       // UPDATE BUS LOCATION
       if (data.lat && data.lng) {
@@ -396,24 +474,56 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         console.log(`📍 Bus Location Updated: ${data.lat}, ${data.lng}`);
       }
 
-      // APPROACHING DESTINATION ALERT - Limited to 2 occurrences
+      // ALERT EXCLUSIVITY: Determine which alert should be active (priority: approaching > missed > safety)
+      let shouldBeActiveAlert = null;
+      
       if (data.approaching_destination && data.destination) {
+        shouldBeActiveAlert = 'approaching';
+      } else if (data.missed_destination && data.destination) {
+        shouldBeActiveAlert = 'missed';
+      } else if (data.bus_moving && data.passengers_outside > 0) {
+        shouldBeActiveAlert = 'safety';
+      }
+
+      // If no alert should be active, clear all counters and reset active type
+      if (!shouldBeActiveAlert) {
+        if (approachingAlertCount > 0) {
+          setApproachingAlertCount(0);
+          console.log('🔄 Approaching alert counter reset');
+        }
+        if (missedStopAlertCount > 0) {
+          setMissedStopAlertCount(0);
+          console.log('🔄 Missed alert counter reset');
+        }
+        if (passengerOutsideAlertCount > 0) {
+          setPassengerOutsideAlertCount(0);
+          console.log('🔄 Safety alert counter reset');
+        }
+        setActiveAlertType(null);
+        return;
+      }
+
+      // Update active alert type
+      setActiveAlertType(shouldBeActiveAlert);
+
+      // APPROACHING DESTINATION ALERT - Only if this is the active alert type
+      if (shouldBeActiveAlert === 'approaching' && data.approaching_destination && data.destination) {
+        console.log(`📍 ACTIVE: Approaching alert - Count: ${approachingAlertCount}/2`);
         if (approachingAlertCount < 2) {
           console.log(`🔔 Approaching ${data.destination} - ${data.distance_m || 5000}m away (${approachingAlertCount + 1}/2)`);
           showAutoNotification(
             '📍 Approaching Destination',
             `You are ${data.distance_m || 5000}m away from ${data.destination}`
           );
-          Speech.speak(`Approaching your destination, ${data.destination}.`, {
-            language: 'en',
-            pitch: 1,
-            rate: 0.9,
-          });
+          const msg = `Approaching your destination, ${data.destination}.`;
+          playSpeechSequentially(msg, '📍 Approaching Alert');
+          
           const newCount = approachingAlertCount + 1;
           setApproachingAlertCount(newCount);
           
           // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
           if (newCount === 2) {
+            console.log('✅ 2 approaching alerts played');
             fetch(`${apiUrl}/api/trips/simulate/update/`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -423,24 +533,24 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // MISSED DESTINATION ALERT - Limited to 2 occurrences
-      if (data.missed_destination && data.destination) {
+      // MISSED DESTINATION ALERT - Only if this is the active alert type
+      if (shouldBeActiveAlert === 'missed' && data.missed_destination && data.destination) {
+        console.log(`⚠️ ACTIVE: Missed alert - Count: ${missedStopAlertCount}/2`);
         if (missedStopAlertCount < 2) {
           console.log(`⚠️ Missed destination: ${data.destination} (${missedStopAlertCount + 1}/2)`);
           showAutoNotification(
             '⚠️ Missed Destination',
             `You have passed ${data.destination}. Please notify the driver.`
           );
-          Speech.speak(`You missed your stop at ${data.destination}.`, {
-            language: 'en',
-            pitch: 1,
-            rate: 0.9,
-          });
+          const msg = `You missed your stop at ${data.destination}.`;
+          playSpeechSequentially(msg, '⚠️ Missed Alert');
+          
           const newCount = missedStopAlertCount + 1;
           setMissedStopAlertCount(newCount);
           
           // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
           if (newCount === 2) {
+            console.log('✅ 2 missed alerts played');
             fetch(`${apiUrl}/api/trips/simulate/update/`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -450,28 +560,19 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // BUS BREAK SAFETY ALERT - Limited to 2 occurrences
-      if (data.bus_moving && data.passengers_outside > 0) {
+      // BUS BREAK SAFETY ALERT - Only if this is the active alert type
+      if (shouldBeActiveAlert === 'safety' && data.bus_moving && data.passengers_outside > 0) {
+        console.log(`🚨 ACTIVE: Safety alert - Count: ${passengerOutsideAlertCount}/2`);
         if (passengerOutsideAlertCount < 2) {
-          console.log('⚠️ Safety Alert: Bus moving with passengers outside! (', passengerOutsideAlertCount + 1, '/2 )');
+          console.log('🚨 Safety Alert: Bus moving with passengers outside! (', passengerOutsideAlertCount + 1, '/2 )');
           showAutoNotification(
-            '⚠️ Safety Alert',
+            '🚨 Safety Alert',
             'Bus is moving while passengers are outside!'
           );
-          Speech.speak(
-            'Warning. Bus is moving while passengers are outside.',
-            {
-              language: 'en',
-              pitch: 1,
-              rate: 0.9,
-            }
-          );
+          const msg = 'Warning. Bus is moving while passengers are outside.';
+          playSpeechSequentially(msg, '🚨 Safety Alert');
+          
           setPassengerOutsideAlertCount(prev => prev + 1);
-        }
-      } else {
-        // Reset counter when condition is no longer met
-        if (passengerOutsideAlertCount > 0) {
-          setPassengerOutsideAlertCount(0);
         }
       }
 
@@ -487,7 +588,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [approachingAlertCount, missedStopAlertCount, passengerOutsideAlertCount, activeAlertType]);
 
   // Listen for deep links
   useEffect(() => {
