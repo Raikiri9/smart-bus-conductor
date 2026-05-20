@@ -153,18 +153,18 @@ export default function DestinationScreen() {
       } catch (error) {
         console.log('Current location error:', error);
         
-        // Use default location for Harare, Zimbabwe as fallback (good for emulators)
+        // Use default location for Bulawayo, Zimbabwe as fallback (good for emulators)
         const defaultLocation = {
-          latitude: -17.8292,
-          longitude: 31.0522
+          latitude: -20.1608,
+          longitude: 28.5832
         };
         
-        console.log('Using default location (Harare, Zimbabwe):', defaultLocation);
+        console.log('Using default location (Bulawayo, Zimbabwe):', defaultLocation);
         await updateLocation(defaultLocation);
         
         Alert.alert(
           'Using Default Location', 
-          'GPS location unavailable. Using Harare, Zimbabwe as starting point.\n\n' +
+          'GPS location unavailable. Using Bulawayo, Zimbabwe as starting point.\n\n' +
           'For emulators: Set a mock location in the emulator settings.\n' +
           'For physical devices: Enable location services.',
           [{ text: 'OK' }]
