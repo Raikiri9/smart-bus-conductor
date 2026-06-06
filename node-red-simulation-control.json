@@ -20,7 +20,7 @@
     "y": 100,
     "wires": [
       [
-        "sim-http-request"
+        "sim-prepare-request"
       ]
     ]
   },
@@ -45,7 +45,7 @@
     "y": 160,
     "wires": [
       [
-        "sim-http-request"
+        "sim-prepare-request"
       ]
     ]
   },
@@ -70,7 +70,7 @@
     "y": 220,
     "wires": [
       [
-        "sim-http-request"
+        "sim-prepare-request"
       ]
     ]
   },
@@ -95,6 +95,25 @@
     "y": 280,
     "wires": [
       [
+        "sim-prepare-request"
+      ]
+    ]
+  },
+  {
+    "id": "sim-prepare-request",
+    "type": "function",
+    "z": "sim-flow",
+    "name": "Prepare HTTPS Request (Skip SSL)",
+    "func": "// Set flag to skip certificate verification for ngrok HTTPS\nmsg.rejectUnauthorized = false;\nmsg.requestTimeout = 5000;\n\n// Ensure payload is stringified for JSON POST\nif (typeof msg.payload === 'object') {\n    msg.payload = JSON.stringify(msg.payload);\n}\n\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 210,
+    "y": 180,
+    "wires": [
+      [
         "sim-http-request"
       ]
     ]
@@ -107,11 +126,26 @@
     "method": "POST",
     "ret": "txt",
     "paytoqs": "ignore",
-    "url": "http://127.0.0.1:8000/api/trips/simulate/update/",
+    "url": "https://chirurgic-jazmine-uncontroverted.ngrok-free.dev/api/trips/simulate/update/",
     "tls": "",
     "persist": false,
     "proxy": "",
     "authType": "",
+    "rejectUnauthorized": false,
+    "headers": [
+      {
+        "keyType": "other",
+        "keyValue": "Content-Type",
+        "valueType": "other",
+        "valueValue": "application/json"
+      },
+      {
+        "keyType": "other",
+        "keyValue": "ngrok-skip-browser-warning",
+        "valueType": "other",
+        "valueValue": "true"
+      }
+    ],
     "x": 400,
     "y": 180,
     "wires": [

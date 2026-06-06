@@ -36,10 +36,108 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const lastCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
   const movingAlertRef = useRef(false);
   const alertedTrips = useRef<Set<string>>(new Set());
+  const isSpeakingRef = useRef(false);
+  const speechQueueRef = useRef<Array<() => Promise<void>>>([]);
   const OUTSIDE_KEY = 'OUTSIDE_PASSENGERS';
+
+  // Sanitize and prepare text for speech engine
+  const prepareSpeechText = (text: string): { text: string; rate: number } => {
+    // Remove only truly problematic characters, keep alphanumeric and common punctuation
+    const cleaned = text
+      .replace(/[<>{}[\]|\\^`~]/g, '') // Remove only highly problematic symbols
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
+    
+    // If text contains multiple words or special formatting, use slower rate
+    const hasComplexDestination = /going to|past|away/i.test(cleaned);
+    const rate = hasComplexDestination ? 0.85 : 0.95;
+    
+    return { text: cleaned, rate };
+  };
 
   const setJourneyActive = (flag: boolean) => {
     setJourneyActiveState(flag);
+  }; 
+
+  // Queue-based speech handler to prevent overlapping voices
+  const queueAndPlaySpeech = async (text: string, alertName: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const speechTask = async () => {
+        try {
+          // Wait for any current speech to finish
+          while (isSpeakingRef.current) {
+            await new Promise(r => setTimeout(r, 100));
+          }
+          
+          isSpeakingRef.current = true;
+          console.log(`🔊 [QUEUE] Starting: ${alertName}`);
+          
+          // Stop any existing speech
+          await Speech.stop().catch(() => {});
+          await new Promise(r => setTimeout(r, 150)); // Brief pause for clean stop
+          
+          // Play the speech
+          return new Promise<void>((speechResolve) => {
+            const timeout = setTimeout(() => {
+              console.warn(`⚠️ [TIMEOUT] Speech took too long: ${alertName}`);
+              isSpeakingRef.current = false;
+              speechResolve();
+            }, 15000);
+            
+            const { text: cleanedText, rate: dynamicRate } = prepareSpeechText(text);
+            
+            Speech.speak(cleanedText, {
+              language: 'en',
+              pitch: 1.0,
+              rate: dynamicRate,
+              onDone: () => {
+                clearTimeout(timeout);
+                console.log(`✅ [DONE] ${alertName}`);
+                isSpeakingRef.current = false;
+                speechResolve();
+              },
+              onError: (error: any) => {
+                clearTimeout(timeout);
+                console.warn(`❌ [ERROR] ${alertName}:`, error);
+                isSpeakingRef.current = false;
+                speechResolve();
+              },
+            });
+          });
+        } catch (error) {
+          console.error(`❌ [EXCEPTION] ${alertName}:`, error);
+          isSpeakingRef.current = false;
+          throw error;
+        }
+      };
+      
+      // Add to queue and process
+      speechQueueRef.current.push(speechTask);
+      
+      const processQueue = async () => {
+        if (speechQueueRef.current.length === 0) {
+          resolve();
+          return;
+        }
+        
+        const task = speechQueueRef.current.shift();
+        if (task) {
+          try {
+            await task();
+          } catch (err) {
+            console.error('Queue task error:', err);
+          }
+        }
+        
+        // Process next item
+        await processQueue();
+      };
+      
+      // Start processing if not already running
+      if (speechQueueRef.current.length === 1) {
+        processQueue().then(resolve).catch(() => resolve());
+      }
+    });
   }; 
 
   useEffect(() => {
@@ -145,14 +243,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             );
 
             if (movedKm >= 0.3 && !movingAlertRef.current && Platform.OS !== 'web') {
-              Speech.stop().catch(() => {});
-              setTimeout(() => {
-                Speech.speak(
-                  'Alert: the bus is moving while registered passengers are still outside. Please ensure everyone is onboard.',
-                  { language: 'en', rate: 1.0, pitch: 1.0 }
-                );
-              }, 100);
               movingAlertRef.current = true;
+              queueAndPlaySpeech(
+                'Alert: the bus is moving while registered passengers are still outside. Please ensure everyone is onboard.',
+                'Bus movement alert'
+              ).catch(() => {});
             }
           }
         }
@@ -181,22 +276,30 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       const trips = await res.json();
 
       for (const t of trips) {
-        // Try road-based distance first, fall back to straight-line
+        // Try road-based distance using local proxy or public OSRM
+        // For LD Player: replace YOUR_IP with your actual machine IP from ipconfig
+        const osrmUrl = 'http://10.0.2.2:3001'; // Android Emulator - reaches host via special IP
+        // For LD Player, use instead: 'http://YOUR_IP:3001' where YOUR_IP is from ipconfig
+        
         let distanceKm = await routeDistanceKm(
           busLocation.latitude,
           busLocation.longitude,
           t.destination_lat,
-          t.destination_lng
+          t.destination_lng,
+          osrmUrl // Pass local proxy URL
         );
 
         if (distanceKm === null) {
           // Fallback to straight-line distance if OSRM fails
+          console.log(`[Distance] OSRM/Proxy failed for trip ${t.id}, using straight-line distance`);
           distanceKm = calculateDistance(
             busLocation.latitude,
             busLocation.longitude,
             t.destination_lat,
             t.destination_lng
           );
+        } else {
+          console.log(`[Distance] Used road distance for trip ${t.id}: ${distanceKm.toFixed(1)}km`);
         }
 
         if (distanceKm <= 5 && !alertedTrips.current.has(`approach-${t.id}`) && Platform.OS !== 'web') {
@@ -204,14 +307,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             ? `${Math.round(distanceKm * 1000)} meters` 
             : `${distanceKm.toFixed(1)} kilometers`;
           
-          Speech.stop().catch(() => {});
-          setTimeout(() => {
-            Speech.speak(`Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`, {
-              language: 'en',
-              pitch: 1.0,
-              rate: 1.0
-            });
-          }, 100);
+          const alertText = `Passenger going to ${t.destination_name}, your destination is approaching. You are ${distanceText} away.`;
+          queueAndPlaySpeech(alertText, `Approaching alert: ${t.destination_name}`).catch(() => {});
           
           // Also show visual alert with distance
           Alert.alert(
@@ -233,14 +330,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             ? `${Math.round(distanceKm * 1000)} meters` 
             : `${distanceKm.toFixed(1)} kilometers`;
           
-          Speech.stop().catch(() => {});
-          setTimeout(() => {
-            Speech.speak(`Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`, {
-              language: 'en',
-              pitch: 1.0,
-              rate: 1.0
-            });
-          }, 100);
+          const alertText = `Passenger going to ${t.destination_name}, you have missed your destination. You are now ${distancePastText} past it.`;
+          queueAndPlaySpeech(alertText, `Missed destination alert: ${t.destination_name}`).catch(() => {});
           
           // Visual alert for missed destination
           Alert.alert(

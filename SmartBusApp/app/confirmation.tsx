@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useTrip } from '../utils/TripContext';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { incrementPassengerCount } from '../utils/passengerCounter';
 import { queueTrip } from '../utils/offlineDatabase';
 import { useConnectivity } from '../utils/ConnectivityManager';
@@ -28,6 +28,24 @@ export default function ConfirmationScreen() {
   const [passengerAdded, setPassengerAdded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'pending' | 'synced'>('idle');
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  
+  // Speech queue to prevent overlapping voices
+  const isSpeakingRef = useRef(false);
+  const speechQueueRef = useRef<Array<() => Promise<void>>>([]);
+
+  // Sanitize and prepare text for speech engine
+  const prepareSpeechText = (text: string): { text: string; rate: number } => {
+    // Remove only truly problematic characters, keep alphanumeric and common punctuation
+    const cleaned = text
+      .replace(/[<>{}[\]|\\^`~]/g, '') // Remove only highly problematic symbols
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
+    
+    // Confirmation alerts are simple, use normal rate
+    const rate = 0.95;
+    
+    return { text: cleaned, rate };
+  };
 
   const qrPayload = {
     ticketId,
@@ -42,6 +60,81 @@ export default function ConfirmationScreen() {
   const qrValue = JSON.stringify(qrPayload);
   const qrValueToRender = qrCode ?? qrValue;
   const qrSize = 220;
+
+  // Queue-based speech handler to prevent overlapping voices
+  const queueAndPlaySpeech = async (text: string, alertName: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const speechTask = async () => {
+        try {
+          while (isSpeakingRef.current) {
+            await new Promise(r => setTimeout(r, 100));
+          }
+          
+          isSpeakingRef.current = true;
+          console.log(`🔊 [QUEUE] Starting: ${alertName}`);
+          
+          await Speech.stop().catch(() => {});
+          await new Promise(r => setTimeout(r, 150));
+          
+          return new Promise<void>((speechResolve) => {
+            const timeout = setTimeout(() => {
+              console.warn(`⚠️ [TIMEOUT] Speech took too long: ${alertName}`);
+              isSpeakingRef.current = false;
+              speechResolve();
+            }, 15000);
+            
+            const { text: cleanedText, rate: dynamicRate } = prepareSpeechText(text);
+            
+            Speech.speak(cleanedText, {
+              language: 'en',
+              pitch: 1.0,
+              rate: dynamicRate,
+              onDone: () => {
+                clearTimeout(timeout);
+                console.log(`✅ [DONE] ${alertName}`);
+                isSpeakingRef.current = false;
+                speechResolve();
+              },
+              onError: (error: any) => {
+                clearTimeout(timeout);
+                console.warn(`❌ [ERROR] ${alertName}:`, error);
+                isSpeakingRef.current = false;
+                speechResolve();
+              },
+            });
+          });
+        } catch (error) {
+          console.error(`❌ [EXCEPTION] ${alertName}:`, error);
+          isSpeakingRef.current = false;
+          throw error;
+        }
+      };
+      
+      speechQueueRef.current.push(speechTask);
+      
+      const processQueue = async () => {
+        if (speechQueueRef.current.length === 0) {
+          resolve();
+          return;
+        }
+        
+        const task = speechQueueRef.current.shift();
+        if (task) {
+          try {
+            await task();
+          } catch (err) {
+            console.error('Queue task error:', err);
+          }
+        }
+        
+        await processQueue();
+      };
+      
+      if (speechQueueRef.current.length === 1) {
+        processQueue().then(resolve).catch(() => resolve());
+      }
+    });
+  };
 
   const sendEmailWithQRCode = async () => {
     if (!isOnline || !trip?.email || emailStatus !== 'idle') return;
@@ -87,41 +180,27 @@ export default function ConfirmationScreen() {
         const updatedCount = await incrementPassengerCount();
         setPassengerAdded(true);
         
-        // Play welcome voice alert
+        // Play welcome voice alert using queue
         if (Platform.OS !== 'web') {
           try {
-            // Stop any existing speech first to avoid conflicts
-            await Speech.stop();
-            
-            // Add delay to ensure clean stop before speaking
-            await new Promise(resolve => setTimeout(resolve, 150));
-            console.log('✅ Playing payment confirmation voice alert');
-            
-            // Wrap Speech.speak in a promise with timeout to prevent hanging
-            const speakWithTimeout = (text: string, options: any, timeoutMs: number = 10000) => {
-              return Promise.race([
-                Speech.speak(text, options),
-                new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error('Speech timeout')), timeoutMs)
-                )
-              ]);
-            };
-
-            await speakWithTimeout(
+            console.log('🔊 Starting payment confirmation voice alerts');
+            await queueAndPlaySpeech(
               'Welcome to Smart Bus Conductor. Your payment has been confirmed. Please keep your QR code ready for scanning during the journey.',
-              { language: 'en', pitch: 1.0, rate: 1.0 }
+              'Payment confirmation'
             );
 
             if (updatedCount === totalSeats) {
               // Small delay before second alert
               await new Promise(resolve => setTimeout(resolve, 500));
-              await speakWithTimeout(
+              console.log('🔊 Playing capacity reached alert');
+              await queueAndPlaySpeech(
                 'Attention. Bus occupancy has reached maximum capacity of 60 passengers.',
-                { language: 'en', pitch: 1.0, rate: 1.0 }
+                'Capacity alert'
               );
             }
           } catch (error) {
-            console.log('❌ Voice alert error:', error);
+            console.warn('⚠️ Audio alert failed (may be muted or not available):', error);
+            // Don't fail the flow - audio is optional enhancement
           }
         }
       }

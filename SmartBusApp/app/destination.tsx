@@ -6,6 +6,8 @@ import { router } from "expo-router";
 import { useTrip } from '../utils/TripContext';
 import { useConnectivity } from '../utils/ConnectivityManager';
 import { saveDestination, getDestinations } from '../utils/offlineDatabase';
+import { getOsrmUrl } from '../config/osrm.config';
+import { routeDistanceKm, calculateDistance } from '../utils/distance';
 
 // Conditionally load MapView and Marker only on native platforms
 const getNativeMapComponents = () => {
@@ -44,6 +46,7 @@ export default function DestinationScreen() {
   const [distance, setDistance] = useState(0);
   const [fare, setFare] = useState(0);
   const [cachedDestinations, setCachedDestinations] = useState<any[]>([]);
+  const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
 
   const formatPlaceName = (place: any) => {
     if (!place) return 'Unknown location';
@@ -81,11 +84,30 @@ export default function DestinationScreen() {
       }
 
       const updateLocation = async (coords: { latitude: number; longitude: number }) => {
+        // Set location immediately so map can render
         setCurrentLocation(coords);
 
-        // Reverse geocode to get location name
+        // Hardcoded known locations for Zimbabwe (fallback for common areas)
+        const knownLocations: { [key: string]: string } = {
+          '-20.1608,28.5832': 'Bulawayo',
+          '-17.8252,31.0335': 'Harare',
+          '-19.0155,29.1549': 'Gweru',
+          '-18.9670,32.6325': 'Mutare',
+          '-17.9667,26.0167': 'Chinhoyi',
+        };
+
+        const coordKey = `${coords.latitude.toFixed(4)},${coords.longitude.toFixed(4)}`;
+        
+        // Check hardcoded locations first
+        if (knownLocations[coordKey]) {
+          console.log('Using hardcoded location:', knownLocations[coordKey]);
+          setCurrentLocationName(knownLocations[coordKey]);
+          await AsyncStorage.setItem('LAST_LOCATION_NAME', knownLocations[coordKey]);
+          return;
+        }
+
+        // Check cache
         try {
-          // Check cache first
           const cacheKey = `geocode_${coords.latitude.toFixed(4)}_${coords.longitude.toFixed(4)}`;
           const cached = await AsyncStorage.getItem(cacheKey);
           
@@ -95,42 +117,53 @@ export default function DestinationScreen() {
             return;
           }
 
+          // Check last known location
+          const lastLocation = await AsyncStorage.getItem('LAST_LOCATION_NAME');
+          if (lastLocation) {
+            console.log('Using last known location:', lastLocation);
+            setCurrentLocationName(lastLocation);
+            return;
+          }
+        } catch (cacheError) {
+          console.log('Cache check error:', cacheError);
+        }
+
+        // Try reverse geocoding
+        try {
           console.log('Fetching reverse geocode for:', coords.latitude, coords.longitude);
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
+            `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${coords.latitude}&lon=${coords.longitude}`,
             {
-              headers: {
-                'User-Agent': 'SmartBusApp/1.0'
-              }
+              headers: { 'User-Agent': 'SmartBusApp/1.0' }
             }
           );
           
-          console.log('Reverse geocode response status:', response.status);
-          
           if (response.ok) {
             const data = await response.json();
-            console.log('Address data:', JSON.stringify(data.address, null, 2));
+            console.log('Geocode response:', data);
+            
             const locationName = data.address?.city || 
                                 data.address?.town || 
-                                data.address?.village || 
+                                data.address?.village ||
                                 data.address?.county ||
-                                'Current Location';
-            console.log('Final location name:', locationName);
+                                formatPlaceName(data);
             
-            // Cache the result for 24 hours
-            await AsyncStorage.setItem(cacheKey, locationName);
-            setCurrentLocationName(locationName);
-          } else if (response.status === 509) {
-            console.log('Rate limited (509). Using coordinates as fallback.');
-            const coordsName = `Location (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`;
-            setCurrentLocationName(coordsName);
+            if (locationName && locationName !== 'Unknown location') {
+              console.log('Setting location name:', locationName);
+              setCurrentLocationName(locationName);
+              const cacheKey = `geocode_${coords.latitude.toFixed(4)}_${coords.longitude.toFixed(4)}`;
+              await AsyncStorage.setItem(cacheKey, locationName);
+              await AsyncStorage.setItem('LAST_LOCATION_NAME', locationName);
+            } else {
+              setCurrentLocationName(`Location (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`);
+            }
           } else {
-            console.log('Response not OK, using fallback');
-            setCurrentLocationName('Current Location');
+            console.log('Geocoding failed with status:', response.status);
+            setCurrentLocationName(`Location (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`);
           }
         } catch (error) {
-          console.log('Reverse geocoding error:', error);
-          setCurrentLocationName('Current Location');
+          console.log('Geocoding error:', error);
+          setCurrentLocationName(`Location (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`);
         }
       };
 
@@ -285,42 +318,44 @@ export default function DestinationScreen() {
 
   // Distance calculation (Haversine fallback)
   const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) ** 2;
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return calculateDistance(lat1, lon1, lat2, lon2);
   };
 
-  // Road distance using OSRM (online)
+  // Road distance using OSRM with ngrok tunnel (works with LD Player)
+  // Falls back to haversine if OSRM unavailable
   const getRoadDistanceKm = async (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    if (!isOnline) return null;
+    if (!isOnline) {
+      console.log('[Distance] Offline - using haversine');
+      return null;
+    }
 
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
-      const response = await fetch(url);
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      const meters = data?.routes?.[0]?.distance;
-      if (typeof meters !== 'number') return null;
-
-      return meters / 1000;
+      console.log('[Distance] Attempting OSRM route calculation...');
+      const osrmUrl = getOsrmUrl();
+      console.log('[Distance] Using OSRM URL:', osrmUrl);
+      
+      const roadDistance = await routeDistanceKm(lat1, lon1, lat2, lon2, osrmUrl);
+      
+      if (roadDistance !== null) {
+        console.log('[Distance] ✅ OSRM distance:', roadDistance, 'km');
+        return roadDistance;
+      }
+      
+      console.log('[Distance] OSRM failed - falling back to haversine');
+      return null;
     } catch (error) {
-      console.log('Road distance error:', error);
+      console.log('[Distance] Road distance error:', error);
       return null;
     }
   };
 
   const getDistanceKm = async (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const roadKm = await getRoadDistanceKm(lat1, lon1, lat2, lon2);
-    return roadKm ?? calculateDistanceKm(lat1, lon1, lat2, lon2);
+    if (roadKm !== null) {
+      return roadKm;
+    }
+    // Fallback to haversine
+    return calculateDistanceKm(lat1, lon1, lat2, lon2);
   };
 
   // Fare logic: $1 per 30km (margin >= 0.5 rounds up to next dollar)
@@ -335,19 +370,28 @@ export default function DestinationScreen() {
     };
 
     setDestination(dest);
+    setIsCalculatingDistance(true);
 
-    const dist = await getDistanceKm(
-      currentLocation.latitude,
-      currentLocation.longitude,
-      dest.latitude,
-      dest.longitude
-    );
+    try {
+      const dist = await getDistanceKm(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        dest.latitude,
+        dest.longitude
+      );
 
-    setDistance(dist);
-    const calculatedFare = calculateFare(dist);
-    setFare(calculatedFare);
-    setResults([]);
-    setQuery('');
+      setDistance(dist);
+      const calculatedFare = calculateFare(dist);
+      setFare(calculatedFare);
+      console.log(`[Destination] Distance: ${dist.toFixed(2)} km, Fare: $${calculatedFare}`);
+    } catch (error) {
+      console.error('[Destination] Error calculating distance:', error);
+      Alert.alert('Error', 'Failed to calculate distance. Please try again.');
+    } finally {
+      setIsCalculatingDistance(false);
+      setResults([]);
+      setQuery('');
+    }
 
     // Cache destination for offline use (only if not already cached)
     if (!place.cached) {
@@ -677,11 +721,22 @@ export default function DestinationScreen() {
           <View style={styles.infoBox}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Distance:</Text>
-              <Text style={styles.infoValue}>{distance.toFixed(2)} km</Text>
+              {isCalculatingDistance ? (
+                <View style={styles.calculatingContainer}>
+                  <ActivityIndicator size="small" color="#3B82F6" />
+                  <Text style={styles.calculatingText}>Calculating...</Text>
+                </View>
+              ) : (
+                <Text style={styles.infoValue}>{distance.toFixed(2)} km</Text>
+              )}
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Fare:</Text>
-              <Text style={styles.infoValue}>${fare}</Text>
+              {isCalculatingDistance ? (
+                <Text style={styles.calculatingText}>--</Text>
+              ) : (
+                <Text style={styles.infoValue}>${fare}</Text>
+              )}
             </View>
           </View>
         )}
@@ -938,6 +993,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  calculatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  calculatingText: {
+    fontSize: 14,
+    color: '#3B82F6',
+    fontWeight: '500',
+    marginLeft: 8,
   },
   infoCard: {
     backgroundColor: '#1E293B',

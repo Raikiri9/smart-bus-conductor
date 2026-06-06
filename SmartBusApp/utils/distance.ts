@@ -28,17 +28,40 @@ export async function routeDistanceKm(
   endLon: number,
   baseUrl?: string
 ): Promise<number | null> {
+  // Debug flag: set to true to force straight-line distance (for testing LD Player network issues)
+  const FORCE_HAVERSINE = false; // Change to true to disable OSRM
+  if (FORCE_HAVERSINE) {
+    console.log('[OSRM] Bypassed - using straight-line distance only');
+    return null;
+  }
+
+  // Default to local proxy if available, otherwise use public OSRM
+  // For Android Emulator: use http://10.0.2.2:3001 (special IP to reach host machine)
+  // For LD Player: use http://<YOUR_IP>:3001 (your actual machine IP)
+  // For physical phone/external: use https://router.project-osrm.org
   const host = (baseUrl || 'https://router.project-osrm.org').replace(/\/$/, '');
   const url = `${host}/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=false&alternatives=false&steps=false&annotations=distance`;
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout for proxy
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      console.warn(`[OSRM] HTTP ${res.status}: ${res.statusText}`);
+      return null;
+    }
     const json = await res.json();
     const meters = json?.routes?.[0]?.distance;
-    if (typeof meters !== 'number' || !Number.isFinite(meters)) return null;
+    if (typeof meters !== 'number' || !Number.isFinite(meters)) {
+      console.warn(`[OSRM] Invalid distance data:`, json);
+      return null;
+    }
     return meters / 1000;
   } catch (error) {
+    console.warn(`[OSRM] Fetch failed:`, error instanceof Error ? error.message : String(error));
     return null;
   }
 }

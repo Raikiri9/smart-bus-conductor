@@ -4,6 +4,7 @@ import { Alert, Platform, ToastAndroid } from 'react-native';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import { router } from 'expo-router';
+import { API_BASE_URL } from './api';
 
 interface SimulationState {
   isSimulating: boolean;
@@ -342,11 +343,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     // Poll backend for next GPS point every 2 seconds
     const interval = setInterval(async () => {
       try {
-        const apiUrl = Platform.OS === 'android' 
-          ? 'http://10.0.2.2:8000' 
-          : 'http://localhost:8000';
-        
-        const response = await fetch(`${apiUrl}/api/trips/simulate/gps/next/${sessionId}/`);
+        const response = await fetch(`${API_BASE_URL}/api/trips/simulate/gps/next/${sessionId}/`);
         const data = await response.json();
 
         if (data.completed) {
@@ -452,12 +449,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   // Fetch continuous Node-RED simulation state
   const fetchNodeRedSimulation = async () => {
     try {
-      const apiUrl = Platform.OS === 'android' 
-        ? 'http://10.0.2.2:8000' 
-        : 'http://localhost:8000';
-
       const response = await fetch(
-        `${apiUrl}/api/trips/simulate/state/`
+        `${API_BASE_URL}/api/trips/simulate/state/`
       );
 
       const data = await response.json();
