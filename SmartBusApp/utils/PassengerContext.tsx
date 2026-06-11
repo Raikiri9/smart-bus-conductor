@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { apiFetch } from './api';
 
 type PassengerContextType = {
   count: number;
@@ -27,7 +28,7 @@ export function PassengerProvider({ children }: { children: React.ReactNode }) {
         : 'http://localhost:8000';
 
       // Fetch active trips from Django
-      const response = await fetch(`${apiUrl}/api/trips/active/`);
+      const response = await apiFetch(`${apiUrl}/api/trips/active/`);
       
       if (response.ok) {
         const activeTrips = await response.json();

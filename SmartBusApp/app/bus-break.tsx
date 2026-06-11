@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView 
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera, CameraView, BarcodeScanningResult } from 'expo-camera';
-import { API_BASE_URL } from '../utils/api';
+import { API_BASE_URL, apiFetch, getApiHeaders } from '../utils/api';
 
 type BreakAction = 'out' | 'in';
 
@@ -150,9 +150,9 @@ export default function BusBreakScreen() {
 	const validateOnServer = async (qr: string) => {
 		try {
 			const action = isGoingOut ? 'bus_break_out' : 'bus_break_in';
-			const res = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
+			const res = await apiFetch(`${API_BASE_URL}/api/trips/validate/`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: getApiHeaders({ 'Content-Type': 'application/json' }),
 				body: JSON.stringify({ qr_code: qr, action }),
 			});
 			const data = await res.json();

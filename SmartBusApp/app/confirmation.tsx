@@ -5,7 +5,7 @@ import { useEffect, useState, useRef } from 'react';
 import { incrementPassengerCount } from '../utils/passengerCounter';
 import { queueTrip } from '../utils/offlineDatabase';
 import { useConnectivity } from '../utils/ConnectivityManager';
-import { API_BASE_URL } from '../utils/api';
+import { API_BASE_URL, apiFetch, getApiHeaders } from '../utils/api';
 import * as Speech from 'expo-speech';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -156,9 +156,9 @@ export default function ConfirmationScreen() {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/trips/send-qr-email/`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/trips/send-qr-email/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
 

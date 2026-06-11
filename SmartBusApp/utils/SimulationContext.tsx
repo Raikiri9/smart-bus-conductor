@@ -4,7 +4,7 @@ import { Alert, Platform, ToastAndroid } from 'react-native';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import { router } from 'expo-router';
-import { API_BASE_URL } from './api';
+import { API_BASE_URL, apiFetch, getApiHeaders } from './api';
 
 interface SimulationState {
   isSimulating: boolean;
@@ -343,7 +343,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     // Poll backend for next GPS point every 2 seconds
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/trips/simulate/gps/next/${sessionId}/`);
+        const response = await apiFetch(`${API_BASE_URL}/api/trips/simulate/gps/next/${sessionId}/`);
         const data = await response.json();
 
         if (data.completed) {
@@ -520,9 +520,9 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
           if (newCount === 2) {
             console.log('✅ 2 approaching alerts played');
-            fetch(`${apiUrl}/api/trips/simulate/update/`, {
+            apiFetch(`${apiUrl}/api/trips/simulate/update/`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getApiHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ approaching_destination: false })
             }).catch(() => {});
           }
@@ -547,9 +547,9 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           // Only clear the flag AFTER both alerts have triggered (when count reaches 2)
           if (newCount === 2) {
             console.log('✅ 2 missed alerts played');
-            fetch(`${apiUrl}/api/trips/simulate/update/`, {
+            apiFetch(`${apiUrl}/api/trips/simulate/update/`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getApiHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ missed_destination: false })
             }).catch(() => {});
           }

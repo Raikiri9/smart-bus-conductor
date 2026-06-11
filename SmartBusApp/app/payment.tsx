@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useTrip } from '../utils/TripContext';
 import { queuePayment } from '../utils/offlineDatabase';
 import { useConnectivity } from '../utils/ConnectivityManager';
-import { API_BASE_URL } from '../utils/api';
+import { API_BASE_URL, apiFetch, getApiHeaders } from '../utils/api';
 import { useState, useEffect } from 'react';
 
 // Simple UUID generator
@@ -49,7 +49,7 @@ export default function PaymentScreen() {
 
   const fetchTestData = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/trips/payment/test-data/`);
+      const response = await apiFetch(`${API_BASE_URL}/api/trips/payment/test-data/`);
       if (response.ok) {
         const data = await response.json();
         setTestData(data);
@@ -65,7 +65,7 @@ export default function PaymentScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       
-      const response = await fetch(`${API_BASE_URL}/api/trips/health/`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/trips/health/`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -142,11 +142,11 @@ export default function PaymentScreen() {
         console.log('Initiating payment to:', `${API_BASE_URL}/api/trips/payment/initiate/`);
         console.log('API_BASE_URL:', API_BASE_URL);
         
-        const response = await fetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
+        const response = await apiFetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
           method: 'POST',
-          headers: {
+          headers: getApiHeaders({
             'Content-Type': 'application/json',
-          },
+          }),
           body: JSON.stringify(paymentData),
         });
 

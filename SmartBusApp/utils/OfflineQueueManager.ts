@@ -6,7 +6,7 @@ import {
   markPaymentSynced,
   markValidationSynced,
 } from './offlineDatabase';
-import { API_BASE_URL } from './api';
+import { API_BASE_URL, apiFetch, getApiHeaders } from './api';
 
 export class OfflineQueueManager {
   // Sync pending trips to backend
@@ -18,9 +18,9 @@ export class OfflineQueueManager {
 
       for (const trip of pendingTrips) {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/trips/create/`, {
+          const response = await apiFetch(`${API_BASE_URL}/api/trips/create/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getApiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               phone_number: trip.phone_number,
               origin_lat: trip.origin_lat,
@@ -74,9 +74,9 @@ export class OfflineQueueManager {
             payload.card_token = payment.card_token;
           }
 
-          const response = await fetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
+          const response = await apiFetch(`${API_BASE_URL}/api/trips/payment/initiate/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getApiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload),
           });
 
@@ -108,9 +108,9 @@ export class OfflineQueueManager {
 
       for (const validation of pendingValidations) {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/trips/validate/`, {
+          const response = await apiFetch(`${API_BASE_URL}/api/trips/validate/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getApiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ qr_code: validation.qr_code }),
           });
 
